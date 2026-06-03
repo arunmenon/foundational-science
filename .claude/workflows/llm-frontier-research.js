@@ -1,7 +1,7 @@
 export const meta = {
   name: 'llm-frontier-research',
-  description: 'Frontier-LLM research pipeline: discover topics, deep-dive each, synthesize PayPal Fraud/Risk experiments. Run one phase per invocation (human checkpoints between).',
-  whenToUse: 'Monthly scan of bleeding-edge LLM advancements (architecture, attention, memory, efficiency, reasoning/RL, agents) mapped to PayPal Fraud/Risk experiments. Invoke with args.phase = discover | deepdive | synthesize.',
+  description: 'Frontier-LLM research pipeline: discover topics, deep-dive each, synthesize fraud/risk experiment hypotheses. Run one phase per invocation (human checkpoints between).',
+  whenToUse: 'Monthly scan of bleeding-edge LLM advancements (architecture, attention, memory, efficiency, reasoning/RL, agents) mapped to fraud/risk experiments. Invoke with args.phase = discover | deepdive | synthesize. Pass args.domainContext to target a specific platform.',
   phases: [
     { title: 'Discover', detail: 'One researcher per frontier area surfaces candidate topics from the last ~2 months' },
     { title: 'DeepDive', detail: 'One deep-researcher per approved topic writes a persisted report' },
@@ -22,14 +22,16 @@ const output_directory = config.outDir
   || '/Users/arunmenon/projects/Foundation-Science/research/llm-frontier-2026-06'
 const research_window = config.window || 'the last 2 months (April 2026 through June 2026)'
 const today = config.today || '2026-06-03'
-const fraud_risk_context = `Domain context for relevance scoring: PayPal's Fraud & Risk ecosystem. This includes
-real-time transaction risk scoring (sub-100ms latency, extreme class imbalance, adversarial/evolving fraud
-patterns), account-takeover and bot detection, behavioral/sequence modeling of user and payment-event streams,
-graph-structured relationships (accounts, devices, IPs, merchants), entity memory across sessions, tabular +
-text + sequence multimodal signals, model explainability/auditability for regulatory review, and
-investigative/agentic workflows for case review. When scoring relevance, prefer advances that plausibly improve
-fraud detection accuracy, lower scoring latency/cost, strengthen long-horizon entity memory, harden against
-adversarial drift, or enable agentic investigation.`
+// Domain context used to score relevance and frame the synthesis. Override via args.domainContext
+// to target a specific platform; the default is a generic payments fraud & risk ML setting.
+const fraud_risk_context = config.domainContext || `Domain context for relevance scoring: a payments fraud & risk
+ML platform. This includes real-time transaction risk scoring (sub-100ms latency, extreme class imbalance,
+adversarial/evolving fraud patterns), account-takeover and bot detection, behavioral/sequence modeling of user
+and payment-event streams, graph-structured relationships (accounts, devices, IPs, merchants), entity memory
+across sessions, tabular + text + sequence multimodal signals, model explainability/auditability for regulatory
+review, and investigative/agentic workflows for case review. When scoring relevance, prefer advances that
+plausibly improve fraud detection accuracy, lower scoring latency/cost, strengthen long-horizon entity memory,
+harden against adversarial drift, or enable agentic investigation.`
 
 // ---------- schemas ----------
 const CANDIDATE_SCHEMA = {
@@ -49,7 +51,7 @@ const CANDIDATE_SCHEMA = {
           whyFrontier: { type: 'string', description: 'What specifically is new in the research window; name papers/models/releases and approximate dates' },
           keyDevelopments: { type: 'array', items: { type: 'string' }, description: 'Specific papers, models, or releases (with venue/lab if known)' },
           sources: { type: 'array', items: { type: 'string' }, description: 'URLs or arXiv IDs' },
-          fraudRiskRelevance: { type: 'string', description: 'Concrete hypothesis for how this could matter to PayPal Fraud/Risk' },
+          fraudRiskRelevance: { type: 'string', description: 'Concrete hypothesis for how this could matter to fraud/risk' },
           noveltyScore: { type: 'integer', minimum: 1, maximum: 5, description: '5 = brand-new frontier in the window; 1 = incremental' },
           fraudRelevanceScore: { type: 'integer', minimum: 1, maximum: 5, description: '5 = directly actionable for fraud/risk; 1 = tangential' },
         },
@@ -69,7 +71,7 @@ const DEEPDIVE_SCHEMA = {
     wrote: { type: 'boolean', description: 'True if the report file was successfully written' },
     summary: { type: 'string', description: '3-4 sentence executive summary' },
     keyFindings: { type: 'array', items: { type: 'string' } },
-    fraudRiskHooks: { type: 'array', items: { type: 'string' }, description: 'Specific hooks into PayPal Fraud/Risk' },
+    fraudRiskHooks: { type: 'array', items: { type: 'string' }, description: 'Specific hooks into the fraud/risk domain' },
   },
   required: ['title', 'reportPath', 'wrote', 'summary'],
 }
@@ -222,7 +224,7 @@ The report MUST contain these sections:
 3. ## Technical Deep-Dive — how it works, key mechanisms, math/architecture where relevant, what changed vs prior art
 4. ## Evidence & Benchmarks — reported results, ablations, limitations, open questions, contested claims
 5. ## Maturity Assessment — research-only vs production-ready, compute/data requirements, reproducibility
-6. ## PayPal Fraud/Risk Implications — concrete, specific ways this could apply (latency, accuracy, memory, adversarial robustness, graph/sequence signals, explainability)
+6. ## Fraud/Risk Implications — concrete, specific ways this could apply (latency, accuracy, memory, adversarial robustness, graph/sequence signals, explainability)
 7. ## Sources — full list of URLs/arXiv IDs actually used
 
 Ground claims in primary sources; cite inline. Be specific and technical, not generic. Be honest about uncertainty and hype.
@@ -257,9 +259,9 @@ After writing the file, return the structured object (set wrote=true and reportP
 if (phase_to_run === 'synthesize') {
   phase('Synthesize')
   const slate_path = config.slatePath || `${output_directory}/00-experiment-slate.md`
-  log(`Synthesizing PayPal Fraud/Risk experiment slate from reports in ${output_directory}`)
+  log(`Synthesizing fraud/risk experiment slate from reports in ${output_directory}`)
 
-  const synthesis_prompt = `You are a principal applied scientist on PayPal's Fraud & Risk team. You have a folder of frontier-LLM deep-dive reports and must turn them into a prioritized, runnable experiment slate.
+  const synthesis_prompt = `You are a principal applied scientist on a fraud & risk team. You have a folder of frontier-LLM deep-dive reports and must turn them into a prioritized, runnable experiment slate.
 
 STEP 1 — READ EVERY REPORT: List and read all markdown files in this directory (use Glob then Read):
 ${output_directory}
@@ -267,7 +269,7 @@ ${output_directory}
 
 ${fraud_risk_context}
 
-STEP 2 — SYNTHESIZE: Produce a set of 8-15 actionable, FALSIFIABLE hypotheses. Each must be a real experiment a PayPal Fraud/Risk team could run. Span quick wins and ambitious bets. For each hypothesis provide:
+STEP 2 — SYNTHESIZE: Produce a set of 8-15 actionable, FALSIFIABLE hypotheses. Each must be a real experiment a fraud/risk team could run. Span quick wins and ambitious bets. For each hypothesis provide:
 - A falsifiable statement ("If we apply X, then metric Y improves because Z")
 - Which source topics/reports it draws from
 - A concrete experiment design (baseline, treatment, offline vs online/shadow, data needed)
