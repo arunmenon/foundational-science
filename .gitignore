@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+
+# Internal PayPal strategy docs — DO NOT PUBLISH
+paypal-foundation-lab-critique.md
+paypal-foundation-lab-exec-v2.md
+
+# Unrelated projects (kept local)
+/cross_attn_ato_poc/
+/intern_curriculum/
+/intern-tracker/
+/sft_autoresearch/
+/small-lm-inference-compute/
+
+# Internal Claude session/task files (only workflows are published)
+/.claude/tasks/
