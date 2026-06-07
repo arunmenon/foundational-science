@@ -1,0 +1,178 @@
+Review timestamp: 20260605-223531-IST
+Scope: domain-agnostic Pack/engine refactor
+
+Summary
+The refactor cleanly removes direct `pack_ato` imports from Environment/generator/grader and
+preserves the ATO golden behavior. Tool execution is now pack-injected, extension state is moved
+under `state.ext`, and generator tool schemas/policies are Pack-provided. This is a useful Level-1
+dependency inversion.
+
+It is not yet a domain-agnostic engine contract, however. The generic grader still implements the
+ATO target shape, the generator still injects fraud/PayPal instructions, generic state exposes ATO
+helpers, and a sampled scenario cannot carry its own target. A second non-ATO pack would therefore
+require engine changes or imitation of ATO fields.
+
+Findings
+
+1. HIGH - The generic grader hard-codes the ATO outcome schema.
+   Files:
+   - grader.py:14-29 requires disposition.label, risk_decision, required_holds,
+     required_escalation_queue, and must_file_claim.
+   - grader.py:11 imports hold_scopes, which reads the ATO `ext.holds` shape.
+
+   Repro observed:
+   A minimal DUMMY Pack with a valid terminal state and target:
+     {"disposition.label": "done", "risk_decision": "allow"}
+   raises:
+     KeyError: 'required_holds'
+
+   Impact:
+   APP/scams and disputes must either fabricate ATO fields or modify grader.py. The engine cannot
+   currently consume an arbitrary Pack despite the clean import graph.
+
+   Recommendation:
+   Move outcome evaluation behind the Pack contract. Options:
+   - Pack.outcome_checker(final_state, target) -> {task_success, field_diffs}; or
+   - a generic declarative target matcher with pack-owned target predicates/helpers.
+   The core grader should combine `outcome_result + policy_result + core lifecycle`, but should not
+   know holds, claims, queues, or pack-specific target keys.
+
+2. HIGH - A static `Pack.target` prevents the proposed scenario sampler from varying outcomes.
+   Files:
+   - pack.py:30-31 stores one target and a separate scenario callable.
+   - generator.py:185-190 samples a scenario but always grades against pack.target.
+   - generate.py:50-51 hard-codes provenance target as "blueprint1".
+
+   Repro observed:
+   A scenario callable alternating between an intended allow target and deny target still exposes the
+   same static Pack.target for both samples.
+
+   Impact:
+   The proposed breadth work (legitimate + fraud, true negatives, attack vectors, difficulty) cannot
+   be correct when cases require different dispositions, holds, escalations, or claims. A legitimate
+   customer sample would still be graded against the sim-swapper deny target.
+
+   Recommendation:
+   Introduce a sampled case/blueprint object:
+     CaseBlueprint {
+       case_id, scenario, target, persona, applicable_policy_ids?, metadata
+     }
+   Pack should expose `sample_case(rng/config) -> CaseBlueprint`. Generation, grading, provenance,
+   feasibility, and replay should all consume the same sampled object.
+
+3. HIGH - Domain semantics remain in modules described as generic.
+   Files:
+   - state.py:62-83 implements verified_identity, holds, and attacker-controlled-channel helpers.
+   - generator.py:77-81 always injects SAR, counterparty-PII, detection-signal, and verification
+     language.
+   - generator.py:87-88 defaults to "You are a PayPal customer."
+   - grader.py:22-28 reads holds/claims/escalation semantics directly.
+
+   Impact:
+   A disputes or non-fraud pack receives irrelevant ATO/fraud instructions, while the supposedly
+   shared state module still knows ATO extension fields. Import-level genericity is not behavioral
+   genericity.
+
+   Recommendation:
+   - Move verified_level/hold_scopes/attacker_channel_set into pack_ato.py or a shared optional
+     policy-helper library, not core state.
+   - Move the entire domain safety footer and customer fallback into Pack fields.
+   - Keep only protocol-level instructions in generator core: tool-call mechanics, finalization,
+     turn limits, and message formatting.
+
+4. HIGH - The unresolved certification/policy-fidelity findings from
+   review-20260605-213438-IST remain unchanged after the refactor.
+   Files:
+   - grader.py:90-107 still certifies evaluated-but-failed soft policies.
+   - pack_ato.py:120-194 still contains partial/vacuous P05-P12 predicates.
+   - pack_ato.py:295-349 still lacks tools referenced by P01/P05/P11/P12.
+
+   Still reproducible:
+   - An evaluated failing ATO-P13 can return certified_gold=True.
+   - Canonical violating examples for P05, semantic P06/P07, nested P08, route-required P10/P11,
+     and validated-token P12 return PASS.
+   - change_account_detail, file_unauthorized_claim, sanctions_watchlist_check, and release_hold are
+     policy-referenced but unavailable to the agent/environment.
+
+   Impact:
+   Refactoring these predicates into a Pack does not make them certification-complete. Wiring P13
+   next would still risk premature gold promotion.
+
+   Recommendation:
+   Address the fourth review before judge integration:
+   - define a separate gold-admission policy requiring certification-policy success;
+   - mark partial policy components non-certifiable;
+   - implement policy-referenced tools and complete positive/negative fixtures.
+
+5. MEDIUM - Pack conformance is not validated.
+   File:
+   - pack.py:23-33 accepts independent mutable lists/maps with no validation.
+
+   Repro observed:
+   A Pack can be constructed with:
+   - required policy X-P02 missing from policies;
+   - handler named "a" but agent spec named "b";
+   - empty/invalid target;
+   without any error.
+
+   The current ATO pack itself has policy-referenced tools absent from both handler/spec sets.
+
+   Impact:
+   A new pack can load successfully but be ungradable, unexecutable, or falsely non-certifiable.
+   This violates contract.md section 8A's policy/tool consistency invariant.
+
+   Recommendation:
+   Add `Pack.validate()` (called at construction/registration) that checks:
+   - unique policy IDs and manifest coverage;
+   - tool-handler/spec parity, excluding explicitly declared core tools;
+   - disposition enums and target/checker compatibility;
+   - policy-referenced tools/fields exist;
+   - required prompts/scenario/target metadata are present.
+
+6. MEDIUM - Genericity is not tested with a non-ATO pack.
+   Files:
+   - test_generator.py and test_factory.py use only ATO_PACK.
+   - test_factory.py:16 also omits ATO_PACK.required_policy_ids when grading.
+
+   Impact:
+   The tests prove ATO behavior survived the refactor, not that the abstraction supports another
+   state shape, outcome checker, prompt, or target.
+
+   Recommendation:
+   Add a tiny in-test `TOY_PACK` with:
+   - no holds/claims/auth fields;
+   - one custom tool and one policy;
+   - a different disposition and outcome shape;
+   - a two-case sampler with different targets.
+   Run env -> generator replay -> grader -> certification through it. This contract test should be
+   the acceptance gate before starting pack_scams.py.
+
+7. LOW - Documentation overstates current genericity and retains stale scope text.
+   File:
+   - README.md:6-9 says adding a bucket leaves the engine untouched.
+   - README.md:67 says no LLM in the loop despite the live generator.
+   - README.md:71 says two trajectories although four golden trajectories exist.
+
+   Recommendation:
+   Describe the current state as "Pack-parameterized ATO slice; generic outcome/case contract not
+   yet proven by a second pack."
+
+Verification
+- python3 -m pytest -q: 16 passed in 0.02s.
+- python3 run.py: golden 4/4, exit 0.
+- Direct `pack_ato` imports are absent from state.py/env.py/grader.py/generator.py.
+- Minimal non-ATO Pack grading fails with KeyError 'required_holds'.
+- A malformed Pack with policy/tool/spec mismatches constructs without validation.
+- A scenario sampler cannot vary the target because generator always uses Pack.target.
+
+Recommended next step
+Do not build breadth, a full second pack, or P13 yet. First complete the generic contract with:
+1. CaseBlueprint/sample_case carrying scenario + target.
+2. Pack-owned outcome checker.
+3. Pack-owned domain prompt/helper semantics.
+4. Pack.validate + a tiny non-ATO contract-test pack.
+5. Then resolve the fourth-review certification/predicate gaps.
+
+After those gates pass, build breadth first (ATO sampler with legit + fraud cases). The sampler will
+then exercise a genuinely generic case contract, and pack_scams/pack_disputes can follow without
+forcing another engine rewrite.

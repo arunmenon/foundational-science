@@ -1,0 +1,175 @@
+Review timestamp: 20260605-134036-IST
+Scope: verification of response-20260605-1219.md and current generator/gold gate
+
+Summary
+The six previous findings were materially addressed: disposition is terminal, finalize must be the
+sole call, customer turns are logged, model protocol failures are isolated per run, metrics are
+named separately, and PASS is no longer automatically written as gold while ATO-P13 is skipped.
+
+However, the current `fully_evaluated` flag does not yet prove full-pack coverage, tool validation is
+not schema-complete, and persisted records expose hidden state while labeling it model-visible.
+These remain important before wiring the judge or promoting any output to certified SFT gold.
+
+Findings
+
+1. HIGH - `fully_evaluated` means "no loaded policy was skipped," not "the canonical ATO pack was
+   fully evaluated."
+   Files:
+   - grader.py:30-54 sets fully_evaluated = len(skipped) == 0.
+   - grader.py:57-73 certifies gold from final PASS + that flag.
+   - pack_ato.py:104-122 loads only LIFE, P01, P02, P03, P04, P09, and P13.
+   - contract.md:11-12 defines the canonical contiguous ATO-P01...P13 policy set.
+
+   Missing from the executable policy list:
+     ATO-P05, P06, P07, P08, P10, P11, P12
+
+   P06-P08 are output/disclosure policies and are relevant to generated customer-facing text, so
+   this is not only scenario-specific dead code.
+
+   Repro observed:
+   Removing the P13 stub from the currently loaded subset makes the compliant trajectory return:
+     fully_evaluated=True
+     certified_gold=True
+   even though seven canonical ATO policies are still absent.
+
+   Impact:
+   Wiring only ATO-P13 would unlock "certified gold" prematurely. The gate proves completeness only
+   relative to whatever list the caller happened to pass, which is mutable and incomplete.
+
+   Recommendation:
+   Define an explicit certification manifest, e.g. required_policy_ids for this pack/scenario, and
+   compute:
+     evaluated_ids == required_policy_ids
+     no skipped/errored/unknown policy result
+   The manifest should include all globally applicable policies (especially P06-P08) and any
+   scenario-triggered policies. Record missing_policy_ids separately. Do not let a caller-selected
+   list define its own completeness.
+
+2. HIGH - Required-argument validation does not enforce types/enums, allowing an ATO-P03 bypass.
+   Files:
+   - generator.py:64-74 validates only tool name and required-key presence.
+   - generator.py:21-62 declares JSON-schema enum/type constraints but does not enforce them.
+   - pack_ato.py:53-68 compares the supplied channel string directly with ground-truth "SMS".
+
+   Repro observed:
+   A generated call with:
+     identity_step_up({"channel_target": "sms"})
+   passes protocol validation and ATO-P03. After hold + escalation + correct disposition, the
+   trajectory grades PASS. The declared tool enum only allows uppercase "SMS".
+
+   Other malformed values (wrong types, invalid scopes/queues/labels, extra fields) are likewise not
+   fully validated; some may pass, some may crash later.
+
+   Impact:
+   The model/API schema is guidance, not a trust boundary. An optimizing model or partially
+   compatible endpoint can bypass exact policy comparisons using invalid-but-present values.
+
+   Recommendation:
+   Validate every tool call against the declared JSON schema before env execution: object type,
+   required fields, property types, enums, array items, and preferably additionalProperties=false.
+   With the no-dependency constraint, implement the small schema subset used by AGENT_TOOLS or
+   replace duplicated declarations with typed per-tool validators. Invalid casing should be rejected,
+   not normalized silently, unless normalization is explicitly part of the tool contract.
+
+3. HIGH - The persisted record labeled "model-visible transcript" contains hidden answer-key state.
+   Files:
+   - env.py:28-35 materializes attacker-controlled channels from hidden ground truth at startup.
+   - env.py:123 stores a full state snapshot on every message/tool/disposition step.
+   - generate.py:49 persists the complete log and comments that hidden ground truth is not embedded.
+
+   Repro observed:
+   The first logged event is the customer's opener, before any discovery tool call, but its state
+   snapshot already contains:
+     [{"channel": "SMS", "changed_at_hours": 12}]
+
+   That value was not visible to the agent. The persisted log is therefore an audit trajectory that
+   includes hidden answer-key state, not the model-visible transcript described in generate.py.
+
+   Impact:
+   A later SFT conversion that serializes state snapshots can leak the answer key directly into
+   training examples. It also makes replay/audit consumers unable to tell what the agent knew at each
+   decision from what only the grader knew.
+
+   Recommendation:
+   Persist two explicitly separated views:
+   - `model_transcript`: only system/user/assistant/tool content actually shown to each model;
+   - `audit_trace`: events plus hidden state snapshots/ground truth for grading.
+   The certified SFT exporter must consume only the intended model-visible view. Mark hidden fields
+   and add a test asserting the training projection excludes attacker_controlled_channels and other
+   answer-key fields.
+
+4. MEDIUM - Reliability metrics exclude errored attempts, so pass^k can be true when the batch did
+   not complete successfully.
+   Files:
+   - generate.py:68 initializes pass_flags.
+   - generate.py:70-77 records errors but does not append False to pass_flags.
+   - generate.py:90-93 computes metrics over completed runs only.
+
+   Example:
+   For K=3 with two PASSes and one endpoint/protocol error, the caller passes [True, True] to
+   compute_metrics, which reports pass@1=1.0 and pass^k=True.
+
+   Impact:
+   This overstates reliability. "All completed runs passed" is different from "all K attempted
+   identical runs passed," especially for Pass100-style evaluation.
+
+   Recommendation:
+   Count every attempted run in the primary reliability denominator; append False for errors, or
+   represent outcomes as PASS/FAIL/ERROR and define pass^k as all K == PASS. Optionally report a
+   second conditional pass rate over completed model responses plus a separate error rate.
+
+5. MEDIUM - `ATO-LIFE-01` is outside the canonical policy-ID contract and fails pack_schema.json.
+   Files:
+   - pack_ato.py:104-107 adds ATO-LIFE-01 to ATO_POLICIES.
+   - contract.md:11-12 reserves the contiguous ATO-P01...P13 ID space.
+   - pack_schema.json:41 requires IDs matching ^[A-Z_]+-P[0-9]{2}$.
+
+   Repro observed:
+     ATO-P01      matches the schema
+     ATO-LIFE-01  does not
+
+   Impact:
+   The eventual pack.yaml cannot contain this policy as written, and generic lifecycle enforcement
+   is being mixed into the domain policy namespace.
+
+   Recommendation:
+   Keep lifecycle/protocol validation as a core checker outside ATO_POLICIES, or formally add a
+   contract-compliant base policy/checker identifier and update the canonical schema/contract. Do
+   not silently expand the ATO policy namespace.
+
+6. LOW - Error records and run IDs do not provide the promised full provenance.
+   Files:
+   - generate.py:36-50 creates full provenance only for non-exception runs.
+   - generate.py:72-76 writes only run_id, scenario, and error for exception runs.
+   - generate.py:38 uses a deterministic scenario-index run ID that repeats on every invocation.
+
+   Impact:
+   Error candidates cannot be tied to model/temperature/version/max_steps, and repeated batches
+   overwrite the same output paths with colliding IDs. Prompt version/hash and generation timestamp
+   are also absent.
+
+   Recommendation:
+   Route errors through the same provenance constructor, add a batch/run UUID or timestamp, and
+   record prompt/tool-schema versions or hashes. Keep secrets out of error strings and artifacts.
+
+Additional observation
+- adherence_score remains 1.0 while P13 is skipped. Since `fully_evaluated=False` is now explicit,
+  this is not a certification bypass, but downstream consumers should receive policy coverage or an
+  "incomplete" score status so 1.0 is not mistaken for complete soft-policy adherence.
+
+Verification
+- python3 -m pytest -q: 9 passed in 0.02s.
+- python3 run.py: golden 4/4, exit 0.
+- DispositionClosed and finalize-not-sole-call behavior are correctly tested.
+- Customer opener/replies are present in env.log.
+- Targeted probes confirmed:
+  - incomplete loaded subset can certify when P13 is removed;
+  - lowercase channel_target="sms" grades PASS;
+  - hidden attacker channel is present in the first persisted state snapshot;
+  - errors are excluded from the pass^k denominator.
+
+Recommended order before the ATO-P13 judge
+1. Fix certification coverage using an explicit required-policy manifest.
+2. Enforce complete tool-argument schemas.
+3. Split model-visible transcript from hidden audit trace.
+4. Then wire/calibrate ATO-P13 and allow promotion to certified gold only when all gates agree.

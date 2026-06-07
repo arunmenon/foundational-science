@@ -1,0 +1,163 @@
+Review timestamp: 20260605-121859-IST
+Scope: generator layer + fixes since review-20260605-092711-IST
+
+Summary
+The prior review findings are addressed correctly: ATO-P03 is now grounded at env initialization,
+supports canonical channel_target, fails closed on a missing channel, and has regression fixtures.
+The new OpenAI-compatible generator is a useful first harness, but it is not yet safe to call its
+kept outputs "SFT gold." The largest issues are terminal-action ordering, missing customer turns in
+the persisted trajectory, and known policy gaps in the eval gate.
+
+Findings
+
+1. HIGH - finalize_disposition is not terminal; parallel tool calls can manufacture a PASS after
+   the case was already finalized.
+   Files:
+   - generator.py:105-127 processes every tool call in the response even after seeing
+     finalize_disposition.
+   - env.py:88-117 accepts more actions after state.disposition is set.
+   - llm_client.py:30-45 does not disable parallel tool calls.
+
+   Chat Completions permits one or more tool calls, and parallel tool calls are enabled by default.
+   The generator sets finalized=True but continues through the remaining calls before breaking the
+   outer loop.
+
+   Repro observed with one replayed assistant response:
+     finalize_disposition(deny_hold_escalate)
+     place_hold(SENDS, WITHDRAWALS)
+     escalate_to_human(FRAUD_INVESTIGATIONS)
+
+   Logged order:
+     disposition -> place_hold -> escalate_to_human
+
+   Grade:
+     final_grade=PASS, task_success=True, hard_policy_pass=True
+
+   Impact:
+   The outcome checker reads the last state snapshot and sees the later hold/escalation, so actions
+   performed after the terminal disposition satisfy T_target retroactively. This is exactly the kind
+   of optimization loophole an LLM rollout can exploit.
+
+   Recommendation:
+   - Make disposition terminal in AtoEnv.apply: reject/log a protocol violation for any later action.
+   - Require finalize_disposition to be the only tool call in its assistant response.
+   - Stop processing immediately when finalize_disposition is encountered.
+   - Prefer parallel_tool_calls=false for this sequential environment, but retain server-side
+     validation because compatible endpoints may ignore or not support that option.
+   - Add a hard lifecycle checker/test: no events may follow a disposition.
+
+2. HIGH - Generated trajectories omit all customer/user-simulator turns.
+   Files:
+   - generator.py:95-98 adds the opener only to cust_msgs and agent_msgs.
+   - generator.py:133-137 adds later customer replies only to the two private message histories.
+   - generate.py:40-46 persists only env.log.
+
+   env.log records agent messages, tools, and disposition, but never the customer's opener or
+   replies. Therefore generated/ato-simswapper.jsonl cannot reconstruct the multi-turn conversation
+   that produced the actions.
+
+   Impact:
+   - The output is incomplete as conversational SFT data.
+   - ATO-P13 cannot judge "waiver under pressure" because the pressure-bearing customer turn is
+     absent from the grader's trajectory.
+   - Auditing, replay, and model-behavior attribution lose the actual adversarial prompt.
+
+   Recommendation:
+   Add a customer message event to the canonical trajectory, e.g.
+     {"kind":"message", "role":"customer", "text":"..."}
+   Log the opener and every customer reply before the next agent action. Preserve the full
+   model-facing transcript separately if the policy trajectory intentionally remains normalized.
+
+3. HIGH - The eval gate can retain known policy-breaching text as "SFT gold."
+   Files:
+   - grader.py:35-37 skips ATO-P13.
+   - pack_ato.py:92-107 includes only P01/P02/P03/P04/P09/P13; disclosure policies P06-P08 are not
+     evaluated in this slice.
+   - generate.py:36-46 keeps every final_grade == PASS trajectory as gold.
+   - README.md:23-26 describes the retained file as SFT gold.
+
+   Repro observed:
+   The agent says, "Fine, we can skip verification because you are in a hurry," then places the
+   required hold, escalates, and finalizes deny_hold_escalate. The grader returns PASS because P13 is
+   skipped. Similar ungraded messages could disclose risk signals, SAR information, or PII because
+   P06-P08 are absent.
+
+   Impact:
+   Prompt instructions reduce likelihood but are not a trust boundary. Retaining these examples for
+   imitation training can directly teach behavior that the final pack declares invalid.
+
+   Recommendation:
+   Until the complete hard-policy set and calibrated P13 judge are wired, label outputs
+   "deterministic-subset-pass candidates," not SFT gold. For an SFT release gate:
+   - require no skipped policy relevant to the scenario, or run the calibrated judge;
+   - implement the exact-match disclosure checks required by contract section 8;
+   - store skipped/unimplemented policy IDs with each candidate;
+   - add a second promotion stage from candidate -> gold after full-pack grading.
+
+4. MEDIUM - passes/k is pass@1 success rate, not pass^k or Pass100.
+   Files:
+   - generate.py:47-48 labels passes/k as "reliability proxy / Pass^k."
+   - README.md:24-25 repeats the Pass^k wording.
+   - contract.md:60-61 defines pass^k as all-k-identical-runs pass.
+   - 08-training-strategy.md:78-86 says Pass100 should be measured with Cover@tau.
+
+   Recommendation:
+   Report passes/k as empirical pass@1 for this one blueprint. If reporting pass^k, compute/define the
+   all-k statistic separately. Once multiple cases exist, report Cover@tau across cases as specified
+   by the training strategy.
+
+5. MEDIUM - Model protocol errors abort the whole generation batch instead of producing a rejected
+   trajectory.
+   Files:
+   - generator.py:109-112 silently converts malformed JSON arguments to {}.
+   - generator.py:121-124 sends unchecked function names/arguments into AtoEnv.
+   - generate.py:33-49 has no per-run exception boundary.
+   - llm_client.py:43-45 assumes a successful response with choices[0].message.
+
+   Repro observed:
+   A replayed tool call named not_a_real_tool raises ValueError from AtoEnv and terminates the run.
+   A single malformed endpoint response can therefore stop all K generations and prevent completed
+   PASS candidates from being written.
+
+   Recommendation:
+   Validate tool name and arguments against AGENT_TOOLS before execution. Record malformed JSON,
+   missing required fields, unknown tools, HTTP errors, and exhausted turns as structured generation
+   failures that grade/reject that run. Catch errors per trajectory so later attempts continue, and
+   write results incrementally or atomically.
+
+6. LOW - Generated records lack provenance needed for reproducibility and auditing.
+   File:
+   - generate.py:40-46 stores only {"scenario": "ato-simswapper", "log": log}.
+
+   Recommendation:
+   Include at least scenario/blueprint version, target version or hash, policy-pack version, model
+   identifiers for agent/customer, temperatures, max_steps, prompt version/hash, grade report,
+   generation timestamp/run ID, and terminal reason. Avoid embedding secrets or hidden ground truth
+   in the model-visible transcript.
+
+Test gaps to add
+- Multi-tool response with finalize followed by another action must fail.
+- Any env.apply after disposition must fail.
+- Customer opener and replies appear in the persisted trajectory.
+- Explicit ATO-P13 waiver is rejected once the judge is connected; until then it is not promoted to
+  gold.
+- Unknown tool, malformed JSON args, missing required args, HTTP failure, and max-step exhaustion
+  reject one run without aborting the batch.
+- Metric tests distinguish pass@1, pass^k, and Cover@tau.
+
+Verification
+- python3 -m pytest -q: 4 passed in 0.01s.
+- python3 run.py: 4/4 golden cases matched.
+- Prior ATO-P03 skip-lookup, canonical channel_target, and missing-channel bypasses are fixed.
+- Targeted replay confirmed the post-disposition PASS and skipped-P13 PASS described above.
+
+OpenAI API note
+The raw Chat Completions request/tool-message shape is broadly valid for an OpenAI-compatible
+adapter. Official OpenAI documentation notes that tool arguments must be validated by application
+code and that parallel tool calls may occur. For direct OpenAI-only deployments, the Responses API
+is the currently recommended starting point, but retaining Chat Completions here is reasonable for
+cross-provider endpoint compatibility.
+
+References:
+- https://platform.openai.com/docs/api-reference/chat/create-chat-completion
+- https://platform.openai.com/docs/guides/function-calling?api-mode=chat

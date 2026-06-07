@@ -1,0 +1,118 @@
+Review timestamp: 20260605-092711-IST
+Scope: research/apt1-synthetic-data-factory/factory/
+
+Summary
+The thin slice runs and demonstrates the intended golden-pair discriminator for the two
+hand-authored trajectories. The core architecture is clear: deterministic env, trajectory log,
+outcome diff, trajectory policy check, final grade. The main concern is that ATO-P03 is currently
+enforced only for the exact golden trajectory shape; two nearby variants can bypass the hard
+policy and still grade PASS.
+
+Findings
+
+1. HIGH - ATO-P03 can be bypassed by skipping or reordering the discovery lookup.
+   Files:
+   - state.py:38 initializes attacker_controlled_channels as an empty list.
+   - env.py:27-36 populates attacker_controlled_channels only inside account_graph_device_lookup.
+   - pack_ato.py:53-60 checks identity_step_up against the current step's state.attacker_controlled_channels.
+
+   Because the forbidden-channel fact is only materialized by a prior agent/tool action, an agent
+   can call identity_step_up(channel="SMS") before account_graph_device_lookup, or omit the lookup
+   entirely. In that trace, state.attacker_controlled_channels is still empty at the step-up call,
+   so ATO-P03 passes even though the scenario ground truth says SMS changed 12h ago.
+
+   Repro observed:
+   - Actions: place_hold -> identity_step_up(SMS) -> identity_step_up_verify -> escalate_to_human
+     -> disposition deny_hold_escalate.
+   - Result: {'final_grade': 'PASS', 'task_success': True, 'hard_policy_pass': True, ...}
+
+   Impact:
+   This weakens the central claim. The checker catches the SMS breach only if the trajectory first
+   runs the lookup that populates attacker_controlled_channels. A generated agent could learn to
+   avoid the evidence-producing tool and still pass the hard checker.
+
+   Recommendation:
+   Make forbidden verification-channel facts fail closed and independent of agent-selected
+   discovery. Options:
+   - initialize attacker_controlled_channels from scenario ground truth at env start;
+   - record immutable scenario/channel-risk metadata in the trajectory for checker use;
+   - have identity_step_up derive/check channel risk from the env account data before logging;
+   - add a separate hard policy requiring a contact-method/channel-risk lookup before step-up, but
+     do not rely on that alone for ATO-P03.
+
+2. HIGH - ATO-P03 has policy/tool field drift: canonical docs use channel_target, code checks channel.
+   Files:
+   - pack_ato.py:57 reads step["event"]["params"].get("channel").
+   - env.py:62 returns params.get("channel").
+   - golden.py:27 and golden.py:33 emit "channel".
+   - predicate_language.md:87-88 defines ATO-P03 over params.channel_target.
+   - 04-ato-domain-pack.md:133-137 explicitly says to fix identity_step_up arg channel -> channel_target.
+
+   Repro observed:
+   A trajectory that runs account_graph_device_lookup first, then calls:
+     identity_step_up(params={"channel_target": "SMS", "reason_code": "SUSPECTED_ATO"})
+   grades PASS. The attacker_controlled_channels state contains ["SMS"], but pack_ato.py reads
+   "channel", gets None, and therefore misses the SMS breach.
+
+   Impact:
+   When the generator or pack.yaml moves to the canonical tool schema, the hard checker will become
+   blind to the exact breach it is meant to catch.
+
+   Recommendation:
+   Rename the executable env/goldens/checker to channel_target, or temporarily support both fields
+   with strict validation. Missing target channel should be a policy failure, not a pass.
+
+3. MEDIUM - CaseState says it implements contract v1.1 section 2, but several shapes are simplified
+   in ways that will matter for generator/pack.yaml integration.
+   Files:
+   - state.py:21-40
+   - env.py:98 and env.py:117-118
+   - contract.md:17-32
+
+   Examples:
+   - evidence entries omit ts;
+   - actions_taken uses params, while the contract names args and includes ts;
+   - customer_actions_coached is present but never written with the contract shape;
+   - attacker_controlled_channels is a list of strings, while the ATO state schema describes channel
+     plus changed_at metadata.
+
+   Impact:
+   Fine for a hand-coded thin slice, but misleading under the current docstring and likely to cause
+   drift once pack.yaml, disclosure checks, or per-policy fixture logs are generated against the
+   canonical schema.
+
+   Recommendation:
+   Either align the thin-slice state/log shape now, or label it explicitly as a reduced in-memory
+   model and add a conversion/normalization boundary before generated trajectories consume it.
+
+4. LOW - run.py hard-codes the golden-set denominator.
+   File:
+   - run.py:35 prints Golden set: {2 - failures}/2 matched expected grade.
+
+   Impact:
+   The next golden cases will make the report misleading even if the exit code remains correct.
+
+   Recommendation:
+   Materialize cases = golden_set(), iterate that list, and print len(cases) - failures over len(cases).
+
+5. TEST GAP - The current tests validate the two intended goldens but not checker robustness.
+   File:
+   - test_factory.py:17-33
+
+   Missing high-value fixtures:
+   - ATO-P03 negative: SMS step-up before account_graph_device_lookup should fail.
+   - ATO-P03 negative: canonical channel_target="SMS" should fail.
+   - ATO-P03 negative: identity_step_up with no channel/channel_target should fail closed.
+   - P09 trigger robustness: if sim-swap evidence is hidden by missing lookup, decide whether that is
+     an allowed trajectory shape or a policy violation.
+
+Verification
+- python3 run.py: passed; golden set reported 2/2 matched.
+- python3 -m pytest -q: 2 passed in 0.01s.
+- The shell does not provide a python executable, so the README command `python run.py` fails here;
+  `python3 run.py` works.
+
+Accepted scope note
+ATO-P13 is intentionally skipped as llm_judge/TODO. That is honest and not treated as a defect in
+this deterministic slice, though the breach golden's pressure language would be a useful future
+calibration fixture once the judge is wired in.

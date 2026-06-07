@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foundation-science/apt1/pack_schema.json",
+  "title": "Domain Pack",
+  "description": "Machine-readable schema for a fraud/commerce CX domain pack. Canonical contract: contract.md v1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pack_id", "domain", "contract_version", "disposition_labels", "state_extension", "policies", "tools", "personas", "checkers"],
+  "properties": {
+    "pack_id": { "type": "string", "pattern": "^[A-Z_]+$", "examples": ["ATO", "APP_SCAMS", "COMMERCE_DISPUTES"] },
+    "domain": { "type": "string", "enum": ["FRAUD", "COMMERCE"] },
+    "contract_version": { "type": "string", "const": "v1.0" },
+    "pressure_sources": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["contacting_party", "absent_third_party", "none"] }
+    },
+    "disposition_labels": {
+      "type": "array", "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Per-pack enum for disposition.label (never global)."
+    },
+    "state_extension": {
+      "type": "object",
+      "description": "Fields added to BaseCaseState for this pack (contract.md §2).",
+      "additionalProperties": { "type": "string", "description": "field -> type/shape note" }
+    },
+    "policies": {
+      "type": "array", "minItems": 1,
+      "items": { "$ref": "#/$defs/policy" }
+    },
+    "tools": { "type": "array", "items": { "$ref": "#/$defs/tool" } },
+    "personas": { "type": "array", "items": { "$ref": "#/$defs/persona" } },
+    "checkers": { "$ref": "#/$defs/checkers" }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "prose", "extends", "scope", "severity", "substrate", "predicate", "source_citation"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Z_]+-P[0-9]{2}$" },
+        "prose": { "type": "string", "description": "Verbatim agent-readable rule; faithful quote of source_citation." },
+        "extends": {
+          "type": ["string", "null"],
+          "enum": ["BASE-AUTH", "BASE-ESC", "BASE-DISC", "BASE-FUNDS-MOVEMENT", "BASE-NO-OVERPROMISE", "BASE-RECOVERY", "BASE-ELIG", "BASE-AUDIT", null]
+        },
+        "scope": { "type": "string", "enum": ["input", "tool_call", "sequence", "output", "state"] },
+        "severity": { "type": "string", "enum": ["BLOCK", "ALERT", "SCORE"] },
+        "weight": { "type": "number", "minimum": 0, "maximum": 1, "description": "Soft rules only (ALERT/SCORE). BLOCK ignores weight." },
+        "substrate": { "type": "string", "enum": ["ltl", "python", "rego", "llm_judge", "verified"] },
+        "predicate": {
+          "type": "object", "additionalProperties": false,
+          "required": ["lang", "body"],
+          "properties": {
+            "lang": { "type": "string", "enum": ["ltl", "python", "rego", "llm_judge", "verified"] },
+            "body": { "type": "string", "description": "Expression in the named dialect; see predicate_language.md." }
+          }
+        },
+        "examples": {
+          "type": "object",
+          "properties": {
+            "positive": { "type": "array", "items": { "type": "string" } },
+            "negative": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "calibration_ref": { "type": "string", "description": "Required when substrate==llm_judge: pointer to the judge gold set (judge-calibration.md)." },
+        "source_citation": { "type": "string", "description": "Public-verified or [RDA] tag." }
+      },
+      "allOf": [
+        { "if": { "properties": { "substrate": { "const": "llm_judge" } } }, "then": { "required": ["calibration_ref"] } },
+        { "if": { "properties": { "severity": { "enum": ["ALERT", "SCORE"] } } }, "then": { "required": ["weight"] } }
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "args", "returns", "side_effect_class"],
+      "properties": {
+        "name": { "type": "string" },
+        "args": { "type": "object", "additionalProperties": { "type": "string" } },
+        "returns": {
+          "type": "object",
+          "description": "field -> {type, classification, customer_disclosable} (contract.md §8).",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string" },
+              "classification": { "type": "string", "enum": ["public", "customer_disclosable", "internal_pii", "detection_signal", "sar_related"] },
+              "customer_disclosable": { "type": "boolean" }
+            },
+            "required": ["classification", "customer_disclosable"]
+          }
+        },
+        "side_effect_class": { "type": "string", "enum": ["READ_ONLY", "WRITE", "MONEY_MOVEMENT"] },
+        "sends_external_message": { "type": "boolean", "description": "True if the tool sends an external message (OTP/email/SMS/issuer/bank). Use this instead of an EXTERNAL side-effect value." },
+        "gated_by": {
+          "type": "object",
+          "description": "Required for WRITE/MONEY_MOVEMENT tools (contract.md §8A).",
+          "additionalProperties": false,
+          "properties": {
+            "policy_ids": { "type": "array", "items": { "type": "string" } },
+            "required_verified_level": { "type": "integer" },
+            "requires_dual_control": { "type": "boolean" },
+            "approver_token_required": { "type": "boolean" },
+            "allowed_pre_verification": { "type": "boolean", "description": "True for protective actions (lock attacker out) allowed before identity verification; false for restorative/money-moving actions." },
+            "customer_consent_required": { "type": "boolean" }
+          }
+        },
+        "source_citation": { "type": "string" }
+      }
+    },
+    "persona": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "family", "attribute_vector", "pressure_source"],
+      "properties": {
+        "name": { "type": "string" },
+        "family": { "type": "string", "enum": ["adversary", "legit", "benign_control"] },
+        "attribute_vector": { "type": "object", "additionalProperties": { "type": ["string", "boolean", "number"] } },
+        "pressure_source": { "type": "string", "enum": ["contacting_party", "absent_third_party", "none"] },
+        "stresses_policies": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "checkers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "policy", "feasibility"],
+      "properties": {
+        "outcome": { "type": "string", "const": "final_state_diff_vs_T_target" },
+        "policy": { "type": "string", "const": "trajectory_predicate_eval" },
+        "feasibility": { "type": "string", "const": "compliant_path_exists_probe" },
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["task_success", "hard_policy_pass", "adherence_score", "pass^k"] }
+        }
+      }
+    },
+    "cross_pack_handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_pack", "to_pack", "reason", "payload", "handoff_policy"],
+      "properties": {
+        "from_pack": { "type": "string" },
+        "to_pack": { "type": "string" },
+        "reason": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "required": ["customer_id"],
+          "properties": {
+            "customer_id": { "type": "string" },
+            "transaction_id": { "type": "string" },
+            "claim_type": { "type": "string" },
+            "evidence_refs": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "handoff_policy": { "type": "string" }
+      }
+    }
+  }
+}

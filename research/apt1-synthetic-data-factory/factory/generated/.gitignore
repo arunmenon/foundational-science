@@ -1,0 +1,5 @@
+# Reproducible generation outputs. The candidate batches also carry the hidden-ground-truth
+# audit_trace (the answer key), which must never become training data. Regenerate via generate.py.
+*.jsonl
+*.tmp
+!.gitignore
