@@ -1,6 +1,6 @@
 # Taxonomy Gap-Analysis Prompt (external cross-check)
 
-**Purpose:** Break the circularity flagged in [02 §4A](02-ppa-and-taxonomy.md) by validating our *generated* fraud/commerce taxonomy against **independent, published** fraud typologies. Feed this prompt + the full contents of `02-ppa-and-taxonomy.md` to a strong LLM (ideally a different model family than the one that generated the taxonomy, for independence).
+**Purpose:** Break the circularity flagged in [02 §4A](../docs/02-ppa-and-taxonomy.md) by validating our *generated* fraud/commerce taxonomy against **independent, published** fraud typologies. Feed this prompt + the full contents of `02-ppa-and-taxonomy.md` to a strong LLM (ideally a different model family than the one that generated the taxonomy, for independence).
 
 **How to use:** paste everything below the line into the LLM, then paste the taxonomy where indicated.
 

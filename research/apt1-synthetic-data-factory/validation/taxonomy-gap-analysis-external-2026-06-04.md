@@ -1,6 +1,6 @@
 # Taxonomy Gap Analysis — External Cross-Check (2026-06-04)
 
-**What this is:** the output of running [taxonomy-gap-analysis-prompt.md](taxonomy-gap-analysis-prompt.md) on an **independent LLM** against [02-ppa-and-taxonomy.md](02-ppa-and-taxonomy.md). This is the **independent-anchor validation** required by [02 §4A](02-ppa-and-taxonomy.md) to break the generation-circularity (the taxonomy and packs were AI-generated from the same source; this check uses *external* published frameworks).
+**What this is:** the output of running [taxonomy-gap-analysis-prompt.md](taxonomy-gap-analysis-prompt.md) on an **independent LLM** against [02-ppa-and-taxonomy.md](../docs/02-ppa-and-taxonomy.md). This is the **independent-anchor validation** required by [02 §4A](../docs/02-ppa-and-taxonomy.md) to break the generation-circularity (the taxonomy and packs were AI-generated from the same source; this check uses *external* published frameworks).
 
 **Status:** candidate list for human/SME review (per the "generation proposes; an outside source disposes" rule). Not yet integrated into the taxonomy — integration pending the scope decision (CX customer/merchant fraud vs enterprise-wide) and v2 authoring.
 

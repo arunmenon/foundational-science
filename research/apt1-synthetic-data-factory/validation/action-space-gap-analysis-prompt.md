@@ -1,6 +1,6 @@
 # Action-Space Gap-Analysis Prompt (external cross-check)
 
-**Purpose:** Independent cross-check of a domain pack's **action space (Tool schema)** — the parallel to [taxonomy-gap-analysis-prompt.md](taxonomy-gap-analysis-prompt.md). Breaks the same circularity ([02 §4A](02-ppa-and-taxonomy.md)): our tools were AI-generated from the same source as everything else, so we validate them against **external fraud-ops playbooks**.
+**Purpose:** Independent cross-check of a domain pack's **action space (Tool schema)** — the parallel to [taxonomy-gap-analysis-prompt.md](taxonomy-gap-analysis-prompt.md). Breaks the same circularity ([02 §4A](../docs/02-ppa-and-taxonomy.md)): our tools were AI-generated from the same source as everything else, so we validate them against **external fraud-ops playbooks**.
 
 **Run it on a different model family** than the one that generated the pack, for independence.
 

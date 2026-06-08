@@ -69,7 +69,7 @@ APT-1's transferable lesson is not its (opaque) model — it's that **a speciali
 
 ### 4.1 Case-state object (per tau-style T_current/T_target)
 
-> **Superseded by [contract.md](contract.md) §2.** The canonical state is `BaseCaseState` (which includes a universal `contact_auth_context`) + per-pack extension; `verified_identity` below is an **ATO-pack extension field**, not base. The example here is retained for narrative context only.
+> **Superseded by [contract.md](../spec/contract.md) §2.** The canonical state is `BaseCaseState` (which includes a universal `contact_auth_context`) + per-pack extension; `verified_identity` below is an **ATO-pack extension field**, not base. The example here is retained for narrative context only.
 ```jsonc
 // CaseState — monotonic; fields only added/confirmed, never silently mutated
 {
@@ -151,7 +151,7 @@ This is what makes policy adherence **independently gradable** — not inferred 
 
 **Checkers:**
 - Final-state: `disposition.label == T_target.label` AND `risk_decision` matches.
-- Policy: run the pack's declared hard and soft policies from the canonical policy artifact (currently ATO-P01…P13; see [contract.md](contract.md) §1 and [04-ato-domain-pack.md](04-ato-domain-pack.md)) over the trajectory → any hard violation = fail even if outcome matched (the fraud-critical case).
+- Policy: run the pack's declared hard and soft policies from the canonical policy artifact (currently ATO-P01…P13; see [contract.md](../spec/contract.md) §1 and [04-ato-domain-pack.md](04-ato-domain-pack.md)) over the trajectory → any hard violation = fail even if outcome matched (the fraud-critical case).
 - Feasibility: a valid path exists where the agent can reach the correct disposition within policy given the tools.
 
 **Example blueprint (one task):**

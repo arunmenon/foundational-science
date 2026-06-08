@@ -1,7 +1,7 @@
 # Predicate Language — Executable Grammar for Policy Checkers
 
 **Status:** canonical companion to [contract.md](contract.md) (§9). Resolves review #6.
-**Substrate selection** (per [03](03-sop-to-predicate-methodology.md)): `python`/`rego` for state/param invariants · **`ltl`** for ordering/temporal · `llm_judge` for fuzzy semantic ([judge-calibration.md](judge-calibration.md)) · `verified` for irreversible-write gates.
+**Substrate selection** (per [03](../docs/03-sop-to-predicate-methodology.md)): `python`/`rego` for state/param invariants · **`ltl`** for ordering/temporal · `llm_judge` for fuzzy semantic ([judge-calibration.md](judge-calibration.md)) · `verified` for irreversible-write gates.
 
 This file specifies the **`ltl`** dialect exactly (the others dispatch to host-language functions / a judge model).
 

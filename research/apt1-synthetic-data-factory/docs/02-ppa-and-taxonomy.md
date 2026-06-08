@@ -146,7 +146,7 @@ The line is not the fraud *type*; it is **whether a verified customer contact dr
 
 ## 2.v2 — Restructured taxonomy (v2, 2026-06-04) `[AUTHORITATIVE]`
 
-Rebuilt after the external cross-check ([taxonomy-gap-analysis-external-2026-06-04.md](taxonomy-gap-analysis-external-2026-06-04.md)). **Scope: customer + merchant fraud/financial-crime CX.** Internal/employee/vendor/financial-statement fraud is **OUT of scope** (noted at the end for handoff only). Two changes from v1: (a) a cleaner primary tree with the missing standard categories added; (b) **orthogonal cross-cutting tags** so we stop mixing actor/vector/rail/claim/queue as peer nodes.
+Rebuilt after the external cross-check ([taxonomy-gap-analysis-external-2026-06-04.md](../validation/taxonomy-gap-analysis-external-2026-06-04.md)). **Scope: customer + merchant fraud/financial-crime CX.** Internal/employee/vendor/financial-statement fraud is **OUT of scope** (noted at the end for handoff only). Two changes from v1: (a) a cleaner primary tree with the missing standard categories added; (b) **orthogonal cross-cutting tags** so we stop mixing actor/vector/rail/claim/queue as peer nodes.
 
 Tags: **[CX]** customer-facing · **[INT]** internal/ops · **[CX/INT]** customer intake + internal adjudication. ✦ = existing reference pack. **(new)** = added from the gap analysis.
 
@@ -229,7 +229,7 @@ DOMAIN: COMMERCE  (buyer/seller experience & payment support)
 ### Orthogonal cross-cutting tags (apply to ANY case — the v2 reframe)
 Stop encoding these as tree nodes; attach them as attributes:
 `actor {customer | fraudster-3rd-party | merchant | mule}` · `victim {owner | counterparty | merchant | platform}` ·
-`pressure_source {contacting_party | absent_third_party | none}` (ties to packs / [contract.md](contract.md) §4) ·
+`pressure_source {contacting_party | absent_third_party | none}` (ties to packs / [contract.md](../spec/contract.md) §4) ·
 `payment_rail {P2P | card | ACH-bank | wallet | crypto | cross-border}` · `instrument {card | bank | wallet-token | stored-value | crypto}` ·
 `transaction_status {pre-send | pending-unsettled | settled | withdrawn | converted}` ·
 `ml_lifecycle_stage {placement | layering | integration}` (AML only) ·
@@ -325,7 +325,7 @@ The base library holds policy primitives that every CX sub-bucket needs, express
 **Corrected framing.** "Check coverage against the taxonomy" is an **internal-consistency check, NOT a completeness/coverage proof.** Do not present it as evidence that the taxonomy or action space is complete.
 
 **How to actually validate (break the circularity) — requires an INDEPENDENT anchor:**
-1. **External cross-check (do now; partially independent).** Cross-check this taxonomy AND each pack's action space against **published external fraud typologies** that did NOT come from our generation — e.g. the **ACFE fraud tree**, **FATF/FinCEN AML/CFT typologies**, **UK PSR APP-scam categories**, **card-scheme fraud reason-code** taxonomies, and standard ATO / synthetic-ID / mule / refund-abuse / merchant-bust-out category lists. Map each external category to our nodes; **unmapped external categories = candidate gaps.** A reusable prompt for this is at [taxonomy-gap-analysis-prompt.md](taxonomy-gap-analysis-prompt.md). **✓ First external cross-check completed 2026-06-04** (independent LLM vs ACFE / FATF-FinCEN / UK Finance-PSR / Visa-MC-Stripe / OWASP / NRF / Fed) — results in [taxonomy-gap-analysis-external-2026-06-04.md](taxonomy-gap-analysis-external-2026-06-04.md): verdict *"solid skeletal but materially incomplete,"* ~25 high-confidence gaps + structural fixes, pending the scope decision and a v2 rewrite.
+1. **External cross-check (do now; partially independent).** Cross-check this taxonomy AND each pack's action space against **published external fraud typologies** that did NOT come from our generation — e.g. the **ACFE fraud tree**, **FATF/FinCEN AML/CFT typologies**, **UK PSR APP-scam categories**, **card-scheme fraud reason-code** taxonomies, and standard ATO / synthetic-ID / mule / refund-abuse / merchant-bust-out category lists. Map each external category to our nodes; **unmapped external categories = candidate gaps.** A reusable prompt for this is at [taxonomy-gap-analysis-prompt.md](../validation/taxonomy-gap-analysis-prompt.md). **✓ First external cross-check completed 2026-06-04** (independent LLM vs ACFE / FATF-FinCEN / UK Finance-PSR / Visa-MC-Stripe / OWASP / NRF / Fed) — results in [taxonomy-gap-analysis-external-2026-06-04.md](../validation/taxonomy-gap-analysis-external-2026-06-04.md): verdict *"solid skeletal but materially incomplete,"* ~25 high-confidence gaps + structural fixes, pending the scope decision and a v2 rewrite.
 2. **Internal grounding (gold standard; eventual).** Reconcile against PayPal's real internal taxonomy, SOP catalog, tool inventory, and **case/call logs** (logs show what *actually* happens), with **human fraud-ops SME sign-off**. This is the only true completeness certification.
 3. **Living artifact.** Generation (LLM gap-finder panels + the empirical "the generator needed a missing tool" detector) may keep *proposing* additions, but **only an independent anchor (1 then 2) can certify** representativeness. *Generation proposes; an outside source disposes.*
 

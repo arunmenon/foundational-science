@@ -9,7 +9,7 @@
 ---
 
 ## 1. Canonical policy-ID scheme
-Each pack owns a prefixed, contiguous ID space: ATO-P01…P13 ([04](04-ato-domain-pack.md)), SCAM-P01…P11 ([06](06-app-scams-domain-pack.md)), DSP-P01…P10 ([07](07-commerce-disputes-domain-pack.md)). The `04` scheme is canonical for ATO; `01`/`03` were renumbered to it ([05](05-introspection-and-contract-revision.md) F1: `P01→P02, P03→P04, P07→P09, P11→P12, P14→P13`). IDs are stable keys; code references policies by ID.
+Each pack owns a prefixed, contiguous ID space: ATO-P01…P13 ([04](../docs/04-ato-domain-pack.md)), SCAM-P01…P11 ([06](../docs/06-app-scams-domain-pack.md)), DSP-P01…P10 ([07](../docs/07-commerce-disputes-domain-pack.md)). The `04` scheme is canonical for ATO; `01`/`03` were renumbered to it ([05](../docs/05-introspection-and-contract-revision.md) F1: `P01→P02, P03→P04, P07→P09, P11→P12, P14→P13`). IDs are stable keys; code references policies by ID.
 
 ## 2. State contract: `BaseCaseState` + per-pack extension
 Shared spine (every pack). `disposition.label` is a **per-pack enum**, never global.
@@ -33,7 +33,7 @@ BaseCaseState = {
 **Rule:** `verified_identity` is an ATO-pack field, **not** base. The universal auth boundary is `contact_auth_context`.
 
 ## 3. Base-policy library (8 families; authored once, specialized per pack)
-`BASE-FUNDS` is split 3-way ([05](05-introspection-and-contract-revision.md)/review #3); `BASE-ELIG` added (review #3 / `07` G3).
+`BASE-FUNDS` is split 3-way ([05](../docs/05-introspection-and-contract-revision.md)/review #3); `BASE-ELIG` added (review #3 / `07` G3).
 
 | Family | Responsibility |
 |---|---|
@@ -54,7 +54,7 @@ BaseCaseState = {
 
 **Composition rules:** import+extend; tighten-not-relax (relaxations require an explicit audited pack rule); stricter constraint wins on conflict; hard dominates soft.
 
-## 4. Adversary model (parameterized — [05](05-introspection-and-contract-revision.md) F5)
+## 4. Adversary model (parameterized — [05](../docs/05-introspection-and-contract-revision.md) F5)
 `pressure_source ∈ {contacting_party, absent_third_party, none}`. ATO = `contacting_party` (impostor). APP = `absent_third_party` (scammer coaching a cooperative victim). Disputes = `both | none` (friendly-fraud disputer vs benign buyer). "Adversarial robustness" metric is defined relative to `pressure_source`.
 
 ## 5. Metrics (reported separately; never collapsed)

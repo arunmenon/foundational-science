@@ -76,16 +76,16 @@ Reuses `escalate_to_human`, `account_graph_device_lookup` from base. New/changed
 ---
 
 ## Artifact 2 — v2 action-space additions (2026-06-04) `[refresh for taxonomy v2: card-network reason codes + cause-tags]`
-Added to cover the v2 **Card-Network Disputes** branch and the **unauthorized-as-claim-with-cause-tags** model. All `[RDA]`; conventions per [contract.md](contract.md) §8.
+Added to cover the v2 **Card-Network Disputes** branch and the **unauthorized-as-claim-with-cause-tags** model. All `[RDA]`; conventions per [contract.md](../spec/contract.md) §8.
 
 - **`lookup_reason_code(network, transaction_id, dispute_reason)`** → `{family, code}` — **READ-ONLY.** `family ∈ {FRAUD, AUTHORIZATION, PROCESSING_ERROR, CONSUMER_DISPUTE}` (Visa/Mastercard/Stripe alignment); `code` = the specific network reason code.
 - **`get_dispute_deadline(dispute_id)`** → `{representment_due, response_due}` — **READ-ONLY.** Network/issuer deadlines for evidence and representment.
 - **`build_representment_packet(dispute_id, evidence_refs)`** → `{packet_id, status}` — **WRITE.** Assembles the compelling-evidence / representment bundle for a contested chargeback.
-- **`file_dispute(...)` UPDATED** — for `type == UNAUTHORIZED`, add a **`cause` tag** ∈ `{ATO, STOLEN_CARD, STOLEN_BANK, WALLET_TOKEN, MERCHANT_ERROR, FIRST_PARTY}` (the v2 "unauthorized = claim-type with cause-tags" model). When `cause ∈ {ATO, STOLEN_CARD, STOLEN_BANK, WALLET_TOKEN}`, emit a **`CrossPackHandoff`** to the relevant fraud pack ([contract.md](contract.md) §6; DSP-P07 routes ATO → pack 04) rather than handling it as a buyer-protection claim.
+- **`file_dispute(...)` UPDATED** — for `type == UNAUTHORIZED`, add a **`cause` tag** ∈ `{ATO, STOLEN_CARD, STOLEN_BANK, WALLET_TOKEN, MERCHANT_ERROR, FIRST_PARTY}` (the v2 "unauthorized = claim-type with cause-tags" model). When `cause ∈ {ATO, STOLEN_CARD, STOLEN_BANK, WALLET_TOKEN}`, emit a **`CrossPackHandoff`** to the relevant fraud pack ([contract.md](../spec/contract.md) §6; DSP-P07 routes ATO → pack 04) rather than handling it as a buyer-protection claim.
 
 ## Artifact 2 — external-review integration (v2.1, 2026-06-04) `[pending build]`
-The disputes action space was independently cross-checked → [action-space-gap-analysis-disputes-external-2026-06-04.md](action-space-gap-analysis-disputes-external-2026-06-04.md). To apply during build (`pack.yaml`):
-- **Apply the cross-cutting standard** ([contract.md](contract.md) §8A): exact enums, classify all return fields (esp. `get_repeat_disputer_score` `{score, band}` → `detection_signal/customer_disclosable:false`), `gated_by`, `validate_dual_control_approval`, `generate_safe_dispute_message`.
+The disputes action space was independently cross-checked → [action-space-gap-analysis-disputes-external-2026-06-04.md](../validation/action-space-gap-analysis-disputes-external-2026-06-04.md). To apply during build (`pack.yaml`):
+- **Apply the cross-cutting standard** ([contract.md](../spec/contract.md) §8A): exact enums, classify all return fields (esp. `get_repeat_disputer_score` `{score, band}` → `detection_signal/customer_disclosable:false`), `gated_by`, `validate_dual_control_approval`, `generate_safe_dispute_message`.
 - **Close the policy↔tool gaps:** add `record_adjudication_outcome` (produces the token `issue_refund` is gated on), `classify_unauthorized_cause` (produces the `cause` tag), and `create_cross_pack_handoff` (the CrossPackHandoff is currently only a state object).
 - **Add the 23 reviewed tools** (full specs in the evidence file; top: `classify_dispute_type`, `get_transaction_context`, `get_delivery_and_fulfillment_status`, `evaluate_purchase_protection_eligibility_v2`, `lookup_network_reason_code_requirements`, `submit_representment_packet`, `get_representment_status`, `issue_claim_refund_or_credit`).
 - **Upgrade `issue_refund`** → require `adjudication_outcome_token` + `approver_token` + idempotency key.
@@ -155,7 +155,7 @@ Per G1: single-contact base + multi-party pack extension. **No `verified_identit
 
 ---
 
-## Claim lifecycle (state machine, per [contract.md](contract.md) §7)
+## Claim lifecycle (state machine, per [contract.md](../spec/contract.md) §7)
 ```text
 intake -> eligibility_checked -> filed -> evidence_requested
       -> (evidence_received | evidence_timeout) -> adjudication
@@ -163,7 +163,7 @@ intake -> eligibility_checked -> filed -> evidence_requested
 ```
 Only these transitions are legal; any illegal transition is a **hard violation**. `issue_refund` is **gated on an adjudication-outcome token** (`claim.adjudication.result == REFUND_APPROVED`), not merely `stage == resolved`. Seller-response and evidence windows are `[RDA]` named constants (`SELLER_RESPONSE_DAYS`, `EVIDENCE_DEADLINE_DAYS`). The `claim.stage` field in Artifact 4 carries the current node.
 
-## Cross-pack handoff (DSP-P07 → ATO, per [contract.md](contract.md) §6)
+## Cross-pack handoff (DSP-P07 → ATO, per [contract.md](../spec/contract.md) §6)
 An `UNAUTHORIZED` dispute is not a buyer-protection claim; it emits a `CrossPackHandoff`:
 ```jsonc
 { "from_pack": "COMMERCE_DISPUTES", "to_pack": "ATO", "reason": "UNAUTHORIZED_TRANSACTION",

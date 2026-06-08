@@ -1,6 +1,6 @@
 # Action-Space Gap Analysis — ATO pack, External Cross-Check (2026-06-04)
 
-**What this is:** output of [action-space-gap-analysis-prompt.md](action-space-gap-analysis-prompt.md) run on an **independent LLM** against the [04-ato-domain-pack.md](04-ato-domain-pack.md) Tool schema (original Artifact 2 + v2 additions). The independent anchor required by [02 §4A](02-ppa-and-taxonomy.md), applied to the action space.
+**What this is:** output of [action-space-gap-analysis-prompt.md](action-space-gap-analysis-prompt.md) run on an **independent LLM** against the [04-ato-domain-pack.md](../docs/04-ato-domain-pack.md) Tool schema (original Artifact 2 + v2 additions). The independent anchor required by [02 §4A](../docs/02-ppa-and-taxonomy.md), applied to the action space.
 
 **External anchors used:** OWASP credential-stuffing & Authentication Cheat Sheet, NIST SP 800-63B digital identity, FTC hacked-account recovery, PayPal public unauthorized-transaction flow, CFPB Regulation E liability, FinCEN SAR confidentiality (FIN-2012-A002), card dispute reason-code practice.
 
@@ -11,8 +11,8 @@
 ## ⚠️ Cross-cutting findings (affect the CONTRACT + ALL packs, not just ATO)
 These are the most important — they're defects in how we applied our own canonical standard:
 
-1. **Side-effect enum mismatch.** Packs use `READ-ONLY` / `MONEY-MOVEMENT` (hyphens) and combined labels like `WRITE / EXTERNAL`; the canonical standard ([pack_schema.json](pack_schema.json)) requires single underscore enums `READ_ONLY | WRITE | MONEY_MOVEMENT`. → normalize everywhere; add a separate `sends_external_message: bool` instead of an `EXTERNAL` label.
-2. **Return fields not classified.** Most tool returns lack the required per-field `{classification, customer_disclosable}` ([contract.md](contract.md) §8). Detection signals (`trust_score`, `z_score`, `baseline_count`, velocity metrics, `shared_signal`, sanctions `matches[]`, `requires_compliance_review`) must be `detection_signal/customer_disclosable:false`; counterparty IDs/IPs/devices `internal_pii/false`. **Safety-critical** (prevents SAR/detection/PII leakage).
+1. **Side-effect enum mismatch.** Packs use `READ-ONLY` / `MONEY-MOVEMENT` (hyphens) and combined labels like `WRITE / EXTERNAL`; the canonical standard ([pack_schema.json](../spec/pack_schema.json)) requires single underscore enums `READ_ONLY | WRITE | MONEY_MOVEMENT`. → normalize everywhere; add a separate `sends_external_message: bool` instead of an `EXTERNAL` label.
+2. **Return fields not classified.** Most tool returns lack the required per-field `{classification, customer_disclosable}` ([contract.md](../spec/contract.md) §8). Detection signals (`trust_score`, `z_score`, `baseline_count`, velocity metrics, `shared_signal`, sanctions `matches[]`, `requires_compliance_review`) must be `detection_signal/customer_disclosable:false`; counterparty IDs/IPs/devices `internal_pii/false`. **Safety-critical** (prevents SAR/detection/PII leakage).
 3. **`approver_id` ≠ dual control.** Sensitive actions should require a scoped, expiring **`approver_token`** validated by a separate tool — not a free-text/numeric id that can be hallucinated or socially engineered.
 4. **Missing a safe-message layer.** Policies forbid leaking detection/SAR data, but no tool enforces it → add a `generate_safe_customer_message` / disclosure-filter (applies to every pack).
 5. **`gated_by` not a schema field.** Add `gated_by:{policy_ids, required_verified_level?, requires_dual_control?, allowed_pre_verification?}` to the tool schema so guardrails are machine-checkable.

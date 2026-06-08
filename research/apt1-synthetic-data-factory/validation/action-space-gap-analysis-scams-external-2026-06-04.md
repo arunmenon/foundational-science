@@ -1,6 +1,6 @@
 # Action-Space Gap Analysis — APP/Scams pack (06), External Cross-Check (2026-06-04)
 
-**What this is:** output of [action-space-gap-analysis-prompt.md](action-space-gap-analysis-prompt.md) on an independent LLM against [06-app-scams-domain-pack.md](06-app-scams-domain-pack.md) (Tool schema + v2 additions). Second of three pack reviews. Candidate list for SME review; not yet integrated.
+**What this is:** output of [action-space-gap-analysis-prompt.md](action-space-gap-analysis-prompt.md) on an independent LLM against [06-app-scams-domain-pack.md](../docs/06-app-scams-domain-pack.md) (Tool schema + v2 additions). Second of three pack reviews. Candidate list for SME review; not yet integrated.
 
 **External anchors:** UK Finance APP scam categories, UK PSR reimbursement regime (live 7 Oct 2024; 5/35-business-day handling, claim cap/excess, vulnerable-consumer exception, stop-the-clock), US CFPB Reg E (authorized scam ≠ unauthorized EFT), PayPal Friends&Family/Purchase-Protection, FTC crypto/romance/gift-card guidance, FinCEN SAR confidentiality (FIN-2012-A002).
 

@@ -73,7 +73,7 @@ All tools below are **research-derived assumptions (not verified internal)** EXC
 *(research-derived assumption, not verified internal; field names reconstructed from public Identity/Transaction-Search surface + industry device-graph practice)*
 - `devices[]`: `{device_id, first_seen, last_seen, os, is_new, trust_score 0-100}`.
 - `sessions[]`: `{session_id, ip, geo_country, login_time, is_impossible_travel}`.
-- `linked_accounts[]`: `{linked_account_id, link_type, shared_signal}` — `classification: internal_pii, customer_disclosable: false` ([contract.md](contract.md) §8) — **never disclosed to caller (ATO-P08).** *(Full field-level classification of every tool return lands with the machine-readable `pack.yaml`; this is the canonical example of the convention.)*
+- `linked_accounts[]`: `{linked_account_id, link_type, shared_signal}` — `classification: internal_pii, customer_disclosable: false` ([contract.md](../spec/contract.md) §8) — **never disclosed to caller (ATO-P08).** *(Full field-level classification of every tool return lands with the machine-readable `pack.yaml`; this is the canonical example of the convention.)*
 - `funding_instruments[]`: `{instrument_id, type, last_four, added_at, recently_added}`.
 - **Side-effect: READ-ONLY.**
 
@@ -121,7 +121,7 @@ All tools below are **research-derived assumptions (not verified internal)** EXC
 ---
 
 ## Artifact 2 — v2 action-space additions (2026-06-04) `[refresh for taxonomy v2 ATO attack-vectors]`
-Added to cover the v2 ATO **attack-vector** subtypes (credential-stuffing, phishing, SIM-swap, session-hijack/token-theft, MFA-bypass, support-channel SE, brute-force) + the credential-change-inventory flow. All `[RDA]`. Conventions per [contract.md](contract.md) §8 (field classification) and `side_effect_class`.
+Added to cover the v2 ATO **attack-vector** subtypes (credential-stuffing, phishing, SIM-swap, session-hijack/token-theft, MFA-bypass, support-channel SE, brute-force) + the credential-change-inventory flow. All `[RDA]`. Conventions per [contract.md](../spec/contract.md) §8 (field classification) and `side_effect_class`.
 
 - **`capture_attack_vector(customer_id, vector)`** → `{recorded}` — **WRITE.** `vector ∈ {CREDENTIAL_STUFFING, PHISHING, SIM_SWAP, SESSION_HIJACK, MFA_BYPASS, SUPPORT_SOCIAL_ENG, BRUTE_FORCE}`. Case metadata that drives remediation routing.
 - **`revoke_all_sessions(customer_id)`** → `{revoked_count}` — **WRITE.** Logs out all active sessions/tokens (session-hijack/token-theft remediation). *Protective action — allowed pre-verification because it only locks attackers out; logged.*
@@ -131,8 +131,8 @@ Added to cover the v2 ATO **attack-vector** subtypes (credential-stuffing, phish
 - **`list_recent_account_changes(customer_id, lookback_days?)`** → `{changes:[{type, old_value, new_value, ts, source_device}]}` — **READ-ONLY.** Credential-change inventory. `old_value/new_value` for contact/credential fields = `classification: internal_pii` (disclose only the owner's own changes, and only after verification); `source_device` may be `detection_signal`.
 
 ## Artifact 2 — external-review integration (v2.1, 2026-06-04) `[pending build]`
-The ATO action space was independently cross-checked → [action-space-gap-analysis-ato-external-2026-06-04.md](action-space-gap-analysis-ato-external-2026-06-04.md). To apply during build (`pack.yaml`):
-- **Apply the cross-cutting standard** ([contract.md](contract.md) §8A) to every tool: exact enums, classify all return fields, add `gated_by`, replace `approver_id`→validated `approver_token`, add `validate_dual_control_approval` + `generate_safe_customer_message`.
+The ATO action space was independently cross-checked → [action-space-gap-analysis-ato-external-2026-06-04.md](../validation/action-space-gap-analysis-ato-external-2026-06-04.md). To apply during build (`pack.yaml`):
+- **Apply the cross-cutting standard** ([contract.md](../spec/contract.md) §8A) to every tool: exact enums, classify all return fields, add `gated_by`, replace `approver_id`→validated `approver_token`, add `validate_dual_control_approval` + `generate_safe_customer_message`.
 - **Fix `identity_step_up` arg `channel` → `channel_target`** so ATO-P03 is enforceable (policy↔tool consistency).
 - **Add the 18 reviewed tools** (full specs in the evidence file; top: `get_transaction_details`, `get_contact_methods_and_channel_risk`, `select_clean_verification_channel`, `cancel_or_recall_pending_payment`, `create_unauthorized_claim_bundle`, `remediate_account_change`, `revoke_third_party_and_device_trust`, `enable_post_recovery_monitoring`).
 - **Route out / defer to SME:** card-network representment → disputes pack 07; Reg E liability calc, telecom/SIM-swap carrier verification, population-level credential-stuffing controls.

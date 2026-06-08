@@ -1,7 +1,7 @@
 # Introspection & Contract Revision — Review of Artifacts 00–04
 
 **Date:** 2026-06-04
-**Status:** Self-review before code (P2). Triggered by the decision to author a 2nd domain pack (APP/scams) as a generalization test. **→ ADOPTED:** these revisions are now canonical in [contract.md](contract.md) `v1.0` and applied to packs 04/06/07. This file is retained as the historical record of *why* the contract changed.
+**Status:** Self-review before code (P2). Triggered by the decision to author a 2nd domain pack (APP/scams) as a generalization test. **→ ADOPTED:** these revisions are now canonical in [contract.md](../spec/contract.md) `v1.0` and applied to packs 04/06/07. This file is retained as the historical record of *why* the contract changed.
 **Reviewed:** 00 (research) · 01 (factory design) · 02 (taxonomy) · 03 (SOP→predicate methodology) · 04 (ATO pack).
 
 This is a deliberately critical pass. The artifacts were authored partly in parallel by separate agents, so the highest risk is **drift between documents** and **ATO-shaped abstractions masquerading as general**. Findings are severity-ranked. Each has evidence + fix. The canonical reconciliations feed directly into the APP/scams pack (06) and any P2 code.
@@ -80,4 +80,4 @@ Three documents use three **incompatible** ATO policy-numbering schemes. Any cod
 5. **Metrics:** `task_success`, `hard_policy_pass`, `adherence_score`, `pass^k` (F6).
 6. **Assumption knobs are named constants** (`RECENCY_WINDOW_H`, `HIGH_VALUE_THRESHOLD`, …) (F7).
 
-**Follow-up edits — APPLIED:** 01 §4.3/§7 and 03 §8 renumbered to canonical IDs; ATO-P13 added to 04; 04 policies retagged with `extends: BASE-*`; metric names + adherence-score formula standardized; `BASE-FUNDS` split 3-way and `BASE-ELIG` added. The canonical contract now lives in [contract.md](contract.md); remaining implementation cleanup (machine-readable `pack.yaml`, unit tests, golden eval set) is tracked in [README.md](README.md).
+**Follow-up edits — APPLIED:** 01 §4.3/§7 and 03 §8 renumbered to canonical IDs; ATO-P13 added to 04; 04 policies retagged with `extends: BASE-*`; metric names + adherence-score formula standardized; `BASE-FUNDS` split 3-way and `BASE-ELIG` added. The canonical contract now lives in [contract.md](../spec/contract.md); remaining implementation cleanup (machine-readable `pack.yaml`, unit tests, golden eval set) is tracked in [README.md](../README.md).

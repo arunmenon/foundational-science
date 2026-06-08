@@ -49,7 +49,7 @@ Schema per [03](03-sop-to-predicate-methodology.md) §3 (`id, prose, scope, seve
 | **SCAM-P10** | BASE-ESC | "If vulnerable-customer indicators are present (distress, confusion, elderly + large loss), escalate to a specialist rather than resolving at the standard tier." *[RDA]* | soft (SCORE, w=0.4) | `G( vulnerable_indicator -> F(escalate(SPECIALIST)) )` |
 | **SCAM-P11** | BASE-AUDIT | "Log scam type, payee novelty, warnings given + acknowledgement, and disposition with reason codes; set SAR flag where warranted without disclosing it." *[RDA]* | soft (SCORE, w=0.3) | required fields present in `state` + `actions_taken` at disposition. |
 
-**Note on `extends`:** SCAM-P06/P07/P08 are *thin specializations* of `BASE-DISC` (identical to ATO-P06/P07/P08) — **proving F3**: disclosure discipline is authored once in the base and reused verbatim across ATO and APP. SCAM-P03→`BASE-NO-OVERPROMISE`, P04→`BASE-ELIG`, P05→`BASE-RECOVERY` — the 3-way split of the old `BASE-FUNDS` ([contract.md](contract.md) §3); the ATO pack specializes the same families for unauthorized reversal. Only SCAM-P01/P02/P09/P10 are genuinely APP-specific.
+**Note on `extends`:** SCAM-P06/P07/P08 are *thin specializations* of `BASE-DISC` (identical to ATO-P06/P07/P08) — **proving F3**: disclosure discipline is authored once in the base and reused verbatim across ATO and APP. SCAM-P03→`BASE-NO-OVERPROMISE`, P04→`BASE-ELIG`, P05→`BASE-RECOVERY` — the 3-way split of the old `BASE-FUNDS` ([contract.md](../spec/contract.md) §3); the ATO pack specializes the same families for unauthorized reversal. Only SCAM-P01/P02/P09/P10 are genuinely APP-specific.
 
 ---
 
@@ -83,7 +83,7 @@ Post-settlement inter-bank recall. `recovery_guaranteed:false` is structural —
 ---
 
 ## Artifact 2 — v2 action-space additions (2026-06-04) `[refresh for taxonomy v2 scam subtypes]`
-Added to cover the v2 scam **subtypes** (purchase, investment/crypto, romance, advance-fee, invoice-mandate, CEO/BEC, impersonation, safe-account, P2P, gift-card, crypto off-ramp) + the vulnerability/coercion overlay. All `[RDA]`; conventions per [contract.md](contract.md) §8.
+Added to cover the v2 scam **subtypes** (purchase, investment/crypto, romance, advance-fee, invoice-mandate, CEO/BEC, impersonation, safe-account, P2P, gift-card, crypto off-ramp) + the vulnerability/coercion overlay. All `[RDA]`; conventions per [contract.md](../spec/contract.md) §8.
 
 - **`capture_crypto_destination(customer_id, payment_id, wallet_address, exchange?)`** → `{recorded}` — **WRITE.** Records crypto off-ramp details (crypto off-ramp / investment-crypto subtypes); explain irreversibility. `wallet_address` = case evidence.
 - **`capture_giftcard_details(customer_id, brand, code_ref, amount)`** → `{recorded, issuer_contact}` — **WRITE / EXTERNAL.** Gift-card scam; returns the issuer contact so the agent can advise the customer to call the card issuer (recovery path differs from bank/P2P rails).
@@ -93,8 +93,8 @@ Added to cover the v2 scam **subtypes** (purchase, investment/crypto, romance, a
 - **`flag_vulnerability(customer_id, indicator)`** → `{flagged}` — **WRITE.** Sets the vulnerability/coercion overlay (`indicator ∈ {elder, coercion, trafficking, cognitive}`); routes to specialist via `escalate_to_human(queue=SCAM_INTERVENTION|SPECIALIST)` and changes agent scripts.
 
 ## Artifact 2 — external-review integration (v2.1, 2026-06-04) `[pending build]`
-The scams action space was independently cross-checked → [action-space-gap-analysis-scams-external-2026-06-04.md](action-space-gap-analysis-scams-external-2026-06-04.md). To apply during build (`pack.yaml`):
-- **Apply the cross-cutting standard** ([contract.md](contract.md) §8A): exact enums, classify all return fields, `gated_by`, `validate_dual_control_approval`, `generate_safe_scam_customer_message`.
+The scams action space was independently cross-checked → [action-space-gap-analysis-scams-external-2026-06-04.md](../validation/action-space-gap-analysis-scams-external-2026-06-04.md). To apply during build (`pack.yaml`):
+- **Apply the cross-cutting standard** ([contract.md](../spec/contract.md) §8A): exact enums, classify all return fields, `gated_by`, `validate_dual_control_approval`, `generate_safe_scam_customer_message`.
 - **Expand `scam_signal_check.scam_typology`** to all 11 v2 subtypes (advance-fee, safe-account, CEO/BEC, P2P, gift-card, crypto-offramp were missing) — and add the missing **`process_payment` / `suspend_or_block_payment_flow`** so SCAM-P01/P02 are gradable (policy↔tool consistency).
 - **Add the 22 reviewed tools** (full specs in the evidence file; top: `get_payment_context`, `suspend_or_block_payment_flow`, `classify_app_scam_subtype`, `issue_effective_scam_warning`, `assess_psr_app_reimbursement`, `create_scam_evidence_package`, `submit_beneficiary_bank_recall_package`, `get_recall_status`, `create_vulnerability_assessment`).
 - **Declare inherited tools locally** (`escalate_to_human`, `sanctions_watchlist_check`).

@@ -1,6 +1,6 @@
 # Action-Space Gap Analysis — Commerce/Disputes pack (07), External Cross-Check (2026-06-04)
 
-**What this is:** independent-LLM run of [action-space-gap-analysis-prompt.md](action-space-gap-analysis-prompt.md) against [07-commerce-disputes-domain-pack.md](07-commerce-disputes-domain-pack.md) (Tool schema + v2 additions). Third of three pack reviews. Candidate list; integrated via the consolidated pass (contract v1.1).
+**What this is:** independent-LLM run of [action-space-gap-analysis-prompt.md](action-space-gap-analysis-prompt.md) against [07-commerce-disputes-domain-pack.md](../docs/07-commerce-disputes-domain-pack.md) (Tool schema + v2 additions). Third of three pack reviews. Candidate list; integrated via the consolidated pass (contract v1.1).
 
 **External anchors:** PayPal dispute timeframes (180-day INR; SNAD 30-from-delivery/180-from-payment; F&F not covered by Purchase Protection); Visa dispute families (Fraud / Authorization / Processing Errors / Consumer Disputes); Stripe reason-code categories; Mastercard merchant rules; FinCEN SAR confidentiality (FIN-2012-A002); CFPB Reg E.
 
