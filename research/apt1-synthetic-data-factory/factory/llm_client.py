@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 
 
@@ -29,7 +30,9 @@ class OpenAIChatClient:
 
     def complete(self, messages, tools=None, tool_choice=None, parallel_tool_calls=None) -> dict:
         """Return the assistant message dict ({content, tool_calls?})."""
-        payload = {"model": self.model, "messages": messages, "temperature": self.temperature}
+        payload = {"model": self.model, "messages": messages}
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
         if tools:
             payload["tools"] = tools
         if tool_choice:
@@ -38,6 +41,19 @@ class OpenAIChatClient:
             # Prefer sequential tool calls for this stepwise env. Endpoints may ignore it, so the
             # generator + lifecycle checker also validate server-side (review F1).
             payload["parallel_tool_calls"] = parallel_tool_calls
+        for _ in range(2):
+            try:
+                return self._request(payload)
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode("utf-8", "ignore")
+                # Some reasoning models (e.g. gpt-5.5) only allow the default temperature; drop it and retry.
+                if e.code == 400 and "temperature" in payload and "temperature" in detail:
+                    payload.pop("temperature")
+                    continue
+                raise RuntimeError(f"HTTP {e.code}: {detail[:300]}")
+        raise RuntimeError("request failed after temperature retry")
+
+    def _request(self, payload) -> dict:
         req = urllib.request.Request(
             self.base_url + "/chat/completions",
             data=json.dumps(payload).encode("utf-8"),

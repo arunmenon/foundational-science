@@ -1,25 +1,34 @@
 """CLI: generate + eval-gate trajectories for a pack against a live OpenAI-compatible endpoint.
 
 Pick the pack with PACK (default "ato"); set your endpoint, then run `python3 generate.py`:
-    export OPENAI_BASE_URL="https://your-endpoint/v1"
+    export OPENAI_BASE_URL="https://your-endpoint/v1"   # the AGENT + CUSTOMER model endpoint
     export OPENAI_API_KEY="..."
-    export OPENAI_MODEL="gpt-4o"        # or your deployed model name
-    export GEN_K=8                       # trajectories to attempt (default 4)
-    export PACK=ato                      # which domain pack to generate for
+    export OPENAI_MODEL="gpt-4o"                          # or your deployed model name
+    export GEN_K=8                                        # trajectories to attempt (default 4)
+    export GEN_CONCURRENCY=8                              # run this many in parallel (default 1)
+    export PACK=ato
+
+JUDGE (substrate=llm_judge policies, e.g. ATO-P13):
+    - JUDGE_DISABLED=1                  -> skip the judge entirely (no certified gold; fail-closed)
+    - JUDGE_BASE_URL / JUDGE_API_KEY / JUDGE_MODEL  -> run the judge on a DIFFERENT endpoint than the
+      agent (e.g. agent on a local self-hosted vLLM, judge on the calibrated gpt-5.4-mini). Each falls
+      back to the agent's OPENAI_* env if unset.
 
 Eval-gating is FAIL-CLOSED: a trajectory is CERTIFIED GOLD only if it PASSes AND every policy in the
-pack's certification manifest was actually evaluated. The ATO deterministic slice leaves the
-llm_judge policy (ATO-P13) unevaluated, so nothing is certified gold yet — by design.
+pack's manifest was evaluated. Records are written INCREMENTALLY (append + fsync per trajectory) to the
+output volume, so a crash/teardown only ever loses the in-flight item — completed work is durable.
 
-Each record stores both an `audit_trace` (internal: state snapshots + ground-truth-derived fields)
-and a `model_transcript` (only what the models saw). Only the transcript is safe for SFT export.
+Each record stores an `audit_trace` (internal: state snapshots + ground-truth) and a
+`model_transcript` (only what the models saw). Only the transcript is safe for SFT export.
 """
 from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from generator import generate_and_grade
 from judge import LLMJudge
@@ -56,12 +65,48 @@ def _base_provenance(run_id, pack, agent, customer):
     }
 
 
-def _atomic_write(path, records):
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
-    os.replace(tmp, path)
+def _append_jsonl(path, record, lock):
+    """Durable incremental write: append one record, flush + fsync so a crash can't lose it."""
+    line = json.dumps(record)
+    with lock:
+        with open(path, "a") as f:
+            f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+
+def _build_judge():
+    """LLM judge for substrate=llm_judge policies, optionally on a separate endpoint (calibrated judge)."""
+    if os.environ.get("JUDGE_DISABLED"):
+        return None
+    return LLMJudge(OpenAIChatClient(
+        base_url=os.environ.get("JUDGE_BASE_URL"),   # None -> falls back to OPENAI_BASE_URL
+        api_key=os.environ.get("JUDGE_API_KEY"),     # None -> falls back to OPENAI_API_KEY
+        model=os.environ.get("JUDGE_MODEL"),         # None -> falls back to OPENAI_MODEL
+        temperature=0.0))
+
+
+def _run_one(i, pack, agent, customer, judge, batch, slug):
+    """Generate + grade ONE trajectory. Returns (record, passed, errored). Never raises."""
+    run_id = f"{batch}-{slug}-{i}"
+    rec = _base_provenance(run_id, pack, agent, customer)
+    try:
+        log, report, transcript = generate_and_grade(pack, agent, customer, judge=judge)
+    except Exception as e:  # per-run boundary; errors count as not-pass
+        rec.update({"terminal_reason": f"exception:{type(e).__name__}", "error": str(e),
+                    "certified_gold": False})
+        return rec, False, True
+    rec.update({
+        "terminal_reason": report.get("terminal_reason"),
+        "blueprint": report.get("scenario_blueprint"),
+        "intent": report.get("scenario_intent"),
+        "grade": {kk: vv for kk, vv in report.items() if not kk.startswith("_")},
+        "missing_policy_ids": report.get("missing_policy_ids", []),
+        "certified_gold": report.get("certified_gold", False),
+        "model_transcript": transcript,   # model-visible: safe basis for SFT export
+        "audit_trace": log,               # INTERNAL: includes state snapshots + ground truth
+    })
+    return rec, report["final_grade"] == "PASS", False
 
 
 def main() -> int:
@@ -72,62 +117,62 @@ def main() -> int:
         return 2
 
     agent = OpenAIChatClient(temperature=0.0)
-    customer = OpenAIChatClient(temperature=0.7)
-    # Calibrated LLM judge for substrate=llm_judge policies (ATO-P13). Wired by default so certified
-    # gold is reachable; set JUDGE_DISABLED=1 to skip it (then P13 stays unevaluated -> no gold).
-    judge = None
-    if not os.environ.get("JUDGE_DISABLED"):
-        judge = LLMJudge(OpenAIChatClient(temperature=0.0, model=os.environ.get("JUDGE_MODEL")))
+    # Customer role-play can run on a CHEAP model/endpoint (it doesn't need the agent's quality).
+    # CUSTOMER_MODEL / CUSTOMER_BASE_URL / CUSTOMER_API_KEY fall back to the agent's OPENAI_* env.
+    customer = OpenAIChatClient(temperature=0.7,
+                                base_url=os.environ.get("CUSTOMER_BASE_URL"),
+                                api_key=os.environ.get("CUSTOMER_API_KEY"),
+                                model=os.environ.get("CUSTOMER_MODEL"))
+    judge = _build_judge()
     k = int(os.environ.get("GEN_K", "4"))
+    concurrency = max(1, int(os.environ.get("GEN_CONCURRENCY", "1")))
     batch = uuid.uuid4().hex[:8]
     slug = pack.pack_id.lower()
     os.makedirs(OUTDIR, exist_ok=True)
+    cand_path = os.path.join(OUTDIR, f"{slug}.{batch}.candidates.jsonl")
+    gold_path = os.path.join(OUTDIR, f"{slug}.{batch}.gold.jsonl")
+    open(cand_path, "a").close()
+    open(gold_path, "a").close()  # ensure both files exist even with 0 gold
 
-    gold, candidates, pass_flags, errors = [], [], [], 0
-    for i in range(k):
-        run_id = f"{batch}-{slug}-{i}"
-        rec = _base_provenance(run_id, pack, agent, customer)
-        try:
-            log, report, transcript = generate_and_grade(pack, agent, customer, judge=judge)
-        except Exception as e:  # per-run boundary (review F5); errors count as not-pass (review F4)
-            errors += 1
-            pass_flags.append(False)
-            rec.update({"terminal_reason": f"exception:{type(e).__name__}", "error": str(e),
-                        "certified_gold": False})
-            candidates.append(rec)
-            print(f"run {i+1}/{k}: ERROR {type(e).__name__}: {e}")
-            continue
-        rec.update({
-            "terminal_reason": report.get("terminal_reason"),
-            "blueprint": report.get("scenario_blueprint"),
-            "intent": report.get("scenario_intent"),
-            "grade": {kk: vv for kk, vv in report.items() if not kk.startswith("_")},
-            "missing_policy_ids": report.get("missing_policy_ids", []),
-            "certified_gold": report.get("certified_gold", False),
-            "model_transcript": transcript,   # model-visible: safe basis for SFT export
-            "audit_trace": log,               # INTERNAL: includes state snapshots + ground truth
-        })
-        candidates.append(rec)
-        pass_flags.append(report["final_grade"] == "PASS")
-        if report.get("certified_gold"):
-            gold.append(rec)
-        print(f"run {i+1}/{k}: [{report.get('scenario_blueprint')}] {report['final_grade']}  "
-              f"certified_gold={report.get('certified_gold')}  terminal={report.get('terminal_reason')}  "
-              f"missing={report.get('missing_policy_ids')}  violations={report['hard_violations']}")
+    lock = threading.Lock()
+    pass_flags, errors, gold_n, done = [], 0, 0, 0
+    judge_desc = "off" if judge is None else (os.environ.get("JUDGE_MODEL")
+                 or ("split:" + os.environ["JUDGE_BASE_URL"] if os.environ.get("JUDGE_BASE_URL") else agent.model))
+    print(f"batch {batch} | pack {pack.pack_id} | k={k} concurrency={concurrency} | "
+          f"agent={agent.model} judge={judge_desc}")
 
-    _atomic_write(os.path.join(OUTDIR, f"{slug}.{batch}.candidates.jsonl"), candidates)
-    _atomic_write(os.path.join(OUTDIR, f"{slug}.{batch}.gold.jsonl"), gold)
+    def handle(result):
+        nonlocal errors, gold_n, done
+        rec, passed, errored = result
+        # INCREMENTAL CHECKPOINT: append to the volume as each trajectory completes (crash-safe).
+        _append_jsonl(cand_path, rec, lock)
+        if rec.get("certified_gold"):
+            _append_jsonl(gold_path, rec, lock)
+        with lock:
+            pass_flags.append(passed)
+            errors += 1 if errored else 0
+            gold_n += 1 if rec.get("certified_gold") else 0
+            done += 1
+            tag = "ERROR" if errored else rec.get("grade", {}).get("final_grade")
+            print(f"[{done}/{k}] {rec.get('blueprint','?'):<22} {tag:<5} "
+                  f"gold={rec.get('certified_gold')} term={rec.get('terminal_reason')} "
+                  f"missing={rec.get('missing_policy_ids')}")
+
+    if concurrency == 1:
+        for i in range(k):
+            handle(_run_one(i, pack, agent, customer, judge, batch, slug))
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as ex:
+            futs = [ex.submit(_run_one, i, pack, agent, customer, judge, batch, slug) for i in range(k)]
+            for fut in as_completed(futs):
+                handle(fut.result())
 
     m = compute_metrics(pass_flags)
-    print(f"\nBatch {batch} (pack {pack.pack_id}): attempted {k}, {errors} errored.")
+    print(f"\nBatch {batch} (pack {pack.pack_id}): attempted {k}, {errors} errored, concurrency {concurrency}.")
     print(f"pass@1 (mean over ALL attempts): {m['pass_at_1']}")
     print(f"pass^k (all {m['n']} attempts passed): {bool(m['pass_pow_k'])}")
-    print(f"CERTIFIED GOLD (PASS + full manifest evaluated): {len(gold)}")
-    print(f"Candidates written (incl. uncertified/errored): {len(candidates)}")
-    missing_seen = sorted({p for c in candidates for p in c.get("missing_policy_ids", [])})
-    if missing_seen:
-        print(f"NOTE: manifest policies not evaluated -> {missing_seen}. PASSes are NOT promoted to "
-              f"gold (fail-closed). Wire these (e.g. the llm_judge policy) to unlock gold.")
+    print(f"CERTIFIED GOLD: {gold_n}  ->  {gold_path}")
+    print(f"Candidates (incremental, crash-safe): {cand_path}")
     return 0
 
 

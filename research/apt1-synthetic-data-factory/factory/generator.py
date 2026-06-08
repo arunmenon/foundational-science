@@ -88,6 +88,12 @@ def customer_system_prompt(persona: dict) -> str:
     return persona.get("system", "You are a PayPal customer contacting support. Keep replies short.")
 
 
+def _tool_name(tc) -> str:
+    """Tool name from a tool_call, stripping any harmony channel tokens some servers leak
+    (e.g. gpt-oss emits 'finalize_disposition<|channel|>commentary' via vLLM's generic parser)."""
+    return (tc.get("function", {}).get("name") or "").split("<|")[0].strip()
+
+
 def _hist(msg: dict) -> dict:
     h = {"role": "assistant"}
     if msg.get("tool_calls"):
@@ -121,7 +127,7 @@ def generate_trajectory(env: Environment, agent, customer, persona: dict, pack, 
         tool_calls = msg.get("tool_calls") or []
 
         if tool_calls:
-            names = [tc["function"]["name"] for tc in tool_calls]
+            names = [_tool_name(tc) for tc in tool_calls]
             # finalize must be the SOLE tool call in its turn (review F1).
             if "finalize_disposition" in names and len(tool_calls) > 1:
                 terminal_reason = "protocol_error:finalize_not_sole_call"
@@ -129,7 +135,7 @@ def generate_trajectory(env: Environment, agent, customer, persona: dict, pack, 
 
             stop = False
             for tc in tool_calls:
-                name = tc["function"]["name"]
+                name = _tool_name(tc)
                 try:
                     args = json.loads(tc["function"].get("arguments") or "{}")
                 except json.JSONDecodeError:
