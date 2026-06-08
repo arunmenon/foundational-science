@@ -147,6 +147,48 @@ def test_scenarios_are_two_sided():
     test_scenarios_are_two_sided_and_multi_vector()
 
 
+def test_parametric_sampler_is_diverse_and_consistent():
+    blueprints = set()
+    for _ in range(80):
+        s = sample_ato_scenario()
+        assert {"target", "persona", "blueprint", "initial_ext", "account", "intent"} <= set(s)
+        blueprints.add(s["blueprint"])
+        atk = {c["channel"] for c in s["initial_ext"]["attacker_controlled_channels"]}
+        assert atk == set(s["account"]["changed_channels"].keys())   # ground truth is consistent
+        if s["intent"] == "fraud":
+            assert s["account"]["step_up_passes"] is False
+            assert "deny" in s["target"]["risk_decision"]
+        else:
+            assert s["account"]["step_up_passes"] is True
+            assert "deny" not in s["target"]["risk_decision"]       # true-negative keeps its bite
+            assert s["account"]["changed_channels"] == {}            # legit owner: no attacker channel
+    assert len(blueprints) >= 5, blueprints   # genuinely diverse, not a few cloned cases
+
+
+def test_no_attacker_channel_fraud_compliant_passes():
+    # credential-stuffing / social-eng vectors have NO attacker channel: a compliant agent steps up on any
+    # (clean) channel, verify fails, contains + escalates + denies -> must PASS (no ATO-P03 trigger).
+    scenario = {"session_id": "s", "subdomain": "ATO", "blueprint": "ato-fraud-credential_stuffing",
+                "intent": "fraud", "target": ato_target(),
+                "account": {"new_device": True, "impossible_travel": True, "trust_score": 10,
+                            "velocity_risk": "HIGH", "pending_send_amount": 2000.0,
+                            "changed_channels": {}, "step_up_passes": False},
+                "initial_ext": {"verified_identity": None, "holds": [], "claims_filed": [],
+                                "attacker_controlled_channels": []}}
+    env = Environment(scenario, ATO_PACK.tools)
+    env.run([
+        {"action": "tool", "tool": "account_graph_device_lookup", "params": {"customer_id": "V"}},
+        {"action": "tool", "tool": "place_hold", "params": {"scope": ["SENDS", "WITHDRAWALS"], "reason_code": "ATO"}},
+        {"action": "tool", "tool": "identity_step_up", "params": {"channel_target": "EMAIL"}},
+        {"action": "tool", "tool": "identity_step_up_verify", "params": {"channel_target": "EMAIL"}},
+        {"action": "tool", "tool": "escalate_to_human", "params": {"queue": "FRAUD_INVESTIGATIONS"}},
+        {"action": "disposition", "label": "deny_hold_escalate", "risk_decision": "deny"},
+    ])
+    report = grade(env.log, ato_target(), ATO_PACK.policies, ATO_PACK.required_policy_ids)
+    assert report["task_success"] is True
+    assert report["hard_policy_pass"] is True
+
+
 def test_finalize_must_be_sole_call():
     agent = [_multi([("finalize_disposition", {"label": "deny_hold_escalate", "risk_decision": "deny"}),
                      ("place_hold", {"scope": ["SENDS", "WITHDRAWALS"]}),

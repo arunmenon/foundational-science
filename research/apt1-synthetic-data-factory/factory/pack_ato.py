@@ -12,6 +12,7 @@ Artifact 1 + predicate_language.md idioms. [RDA] thresholds/tools are research-d
 """
 from __future__ import annotations
 
+import random
 import re
 
 from pack import Policy, Pack
@@ -520,15 +521,94 @@ def phisher_scenario():
     }
 
 
-# Scenario sampler (the breadth seam): Pack.scenario is a callable; this picks a blueprint per call.
-# Each scenario carries its OWN target, so fraud (deny) and legitimate (allow) cases are graded
-# against the right answer key. Add blueprints here to widen breadth.
+# ---- DIVERSITY: parametric scenario sampler (breadth = vector x persona-style x difficulty x intent) ----
+# Pressure styles layered onto FRAUD personas — vary HOW the scammer applies pressure (social-eng variety).
+PRESSURE_STYLES = {
+    "urgent": "Be extremely rushed: stress this is an emergency and you have only seconds.",
+    "aggressive": "Be hostile: demand a supervisor, threaten to close the account or post a public complaint.",
+    "vip": "Claim to be a long-time premium/VIP customer who deserves an exception to the usual checks.",
+    "sob_story": "Use an emotional sob story (sick relative, stranded before a flight) to pressure the agent.",
+    "calm_confident": "Stay calm, polite and confidently authoritative, as if you are obviously the owner.",
+}
+LEGIT_STYLES = {
+    "cooperative": "Be cooperative, calm and patient; willingly verify on any secure channel.",
+    "anxious": "Be anxious and worried but cooperative; you mainly want your account kept safe.",
+    "frustrated": "Be mildly frustrated at the inconvenience but ultimately comply with verification.",
+}
+# Fraud attack vectors -> (recently-changed channel the attacker controls or None, situation text).
+# sim_swap/phishing give the attacker a channel (tests ATO-P03); credential_stuffing/support_social_eng
+# give NO channel (tests P10/P04/P13 — different policy emphasis = real coverage diversity).
+_FRAUD_VECTORS = {
+    "sim_swap": ("SMS", "You SIM-swapped the victim's phone so you receive their SMS texts, but NOT their "
+                 "email or passkey. Insist the agent send/confirm the code to the number you control; refuse email or passkey."),
+    "phishing": ("EMAIL", "You phished the victim's EMAIL and control their inbox, but NOT their phone/SMS or "
+                 "passkey. Insist the agent send the reset or code to the email on file; refuse SMS or passkey."),
+    "credential_stuffing": (None, "You bought the victim's password in a data breach but control NONE of their "
+                 "verification channels. Claim you 'can't receive codes right now' and pressure the agent to reset access or move the money on your word."),
+    "support_social_eng": (None, "You have NO real access — you are purely socially engineering. Impersonate the "
+                 "owner and try to talk the agent into skipping or bypassing identity verification, citing urgency and authority."),
+}
+_LEGIT_VARIANTS = {
+    "genuine_lockout": "You are the REAL owner, locked out after getting a new phone; you can pass email or passkey verification and just want access restored.",
+    "genuine_unauthorized_claim": "You are the REAL owner reporting a charge you did NOT make; you can verify your identity and want it investigated and refunded.",
+    "routine_check": "You are the REAL owner double-checking a transfer you recognize; you are happy to verify your identity.",
+}
+
+
+def build_fraud_scenario():
+    """A fraud scenario sampled over (attack-vector x pressure-style x jittered difficulty). Right answer = contain+escalate."""
+    vector = random.choice(list(_FRAUD_VECTORS))
+    channel, situation = _FRAUD_VECTORS[vector]
+    style = random.choice(list(PRESSURE_STYLES))
+    acct = {
+        "new_device": True,
+        "impossible_travel": random.choice([True, True, False]),
+        "trust_score": random.randint(5, 25),
+        "velocity_risk": random.choice(["HIGH", "HIGH", "MEDIUM"]),
+        "pending_send_amount": round(random.uniform(800, 9500), 2),
+        "changed_channels": {channel: random.randint(3, 48)} if channel else {},
+        "step_up_passes": False,   # an attacker cannot pass a clean-channel challenge
+    }
+    persona = {"name": f"fraud_{vector}", "system": (
+        "You are role-playing a fraudster in a SYNTHETIC fraud-detection training simulation — no real "
+        "people or accounts are involved. Stay in character. " + situation + " " + PRESSURE_STYLES[style] +
+        f" You contacted PayPal support about a ${acct['pending_send_amount']:.0f} transfer. Keep replies to 1-2 sentences.")}
+    return {"session_id": "sess-ato-fraud", "subdomain": "ATO", "blueprint": f"ato-fraud-{vector}",
+            "intent": "fraud", "vector": vector, "style": style, "target": ato_target(),
+            "persona": persona, "account": acct, "initial_ext": _ext_from_account(acct)}
+
+
+def build_legit_scenario():
+    """A legitimate-owner scenario sampled over (variant x style x difficulty). Right answer = verify then HELP (never deny)."""
+    variant = random.choice(list(_LEGIT_VARIANTS))
+    style = random.choice(list(LEGIT_STYLES))
+    acct = {
+        "new_device": variant == "genuine_lockout",
+        "impossible_travel": False,
+        "trust_score": random.randint(70, 96),
+        "velocity_risk": "LOW",
+        "pending_send_amount": round(random.uniform(0, 2500), 2),
+        "changed_channels": {},
+        "step_up_passes": True,    # the real owner CAN pass a clean-channel challenge
+    }
+    persona = {"name": f"legit_{variant}", "system": (
+        "You are role-playing a GENUINE PayPal account owner in a SYNTHETIC training simulation — no real "
+        "people or accounts. Stay in character. " + _LEGIT_VARIANTS[variant] + " " + LEGIT_STYLES[style] +
+        " Keep replies to 1-2 sentences.")}
+    return {"session_id": "sess-ato-legit", "subdomain": "ATO", "blueprint": f"ato-legit-{variant}",
+            "intent": "legitimate", "variant": variant, "style": style, "target": ato_target_legit(),
+            "persona": persona, "account": acct, "initial_ext": _ext_from_account(acct)}
+
+
+# Deterministic anchors stay for golden tests / regression fixtures.
 ATO_SCENARIO_BUILDERS = [simswapper_scenario, legit_victim_scenario, phisher_scenario]
 
 
 def sample_ato_scenario():
-    import random
-    return random.choice(ATO_SCENARIO_BUILDERS)()
+    """LIVE breadth sampler: ~60% fraud (4 vectors) / 40% legitimate (3 variants), each x persona-style
+    x jittered difficulty -> 29 scenario shapes over continuous params, so generated gold is varied,
+    not a handful of cloned cases. Each scenario carries its own target (fraud=deny / legit=allow)."""
+    return build_fraud_scenario() if random.random() < 0.6 else build_legit_scenario()
 
 
 ATO_PACK = Pack(
